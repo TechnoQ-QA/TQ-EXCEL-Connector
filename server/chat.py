@@ -11,6 +11,7 @@ The answer is {ok, reply, actions, spec}; the panel applies the actions in Excel
 """
 
 import difflib
+import json
 import re
 
 import assistant as assistant_module
@@ -779,6 +780,24 @@ class ChatService:
             name, n = reports.sheet_name("%s %d" % (base[:28], n)), n + 1
         return layouts.sample(self.ledger, name)
 
+    def _library_import(self, context, args):
+        """A layout from the company library: its own layout sheet (a free name) and its report, built now."""
+        design = args.get("design")
+        if not isinstance(design, dict) or not isinstance(design.get("lines"), list):
+            raise ChatError("That library entry is not a layout.")
+        design = json.loads(json.dumps(design))
+        taken = {s["name"].lower() for s in self._layout_sheets(context)}
+        design["name"] = templates.layout_name(_text(args.get("name"))[:40] or _text(design.get("title"))[:40], taken)
+        design["title"] = _text(design.get("title"))[:60] or "Report"
+        sheets = [_text(s).lower() for s in context.get("sheets") or []]
+        if reports.sheet_name(design["title"]).lower() in sheets:
+            base, n = design["title"], 2   # never write the report over a sheet that is already there
+            while reports.sheet_name("%s %d" % (base, n)).lower() in sheets:
+                n += 1
+            design["title"] = "%s %d" % (base, n)
+        layouts.check(self.ledger, design)
+        return self._publish(design, 'From the company library: layout sheet "%s".' % design["name"], 1)
+
     def _layout_new(self, context, args):
         """Designer: a new layout from a ready-made template, or from a format typed on a sheet."""
         taken = {s["name"].lower() for s in self._layout_sheets(context)}
@@ -1080,7 +1099,12 @@ class ChatService:
                 filters = args.get("filters") if isinstance(args.get("filters"), dict) else {}
                 return self._dashboard(context, arg("kind"), arg("month"),
                                        {k: _text(v)[:200] for k, v in filters.items() if k in FILTER_KINDS}, arg("title"))
+            if op == "libraryImport":
+                return self._library_import(context, args)
             design, count = self._pick_layout(context, wanted=arg("layout"))
+            if op == "libraryExport":   # the layout as it is, for the company library
+                return {"ok": True, "design": json.loads(json.dumps(design, default=str)), "title": design["title"],
+                        "name": design["name"], "actions": [], "reply": ""}
             if op == "get":
                 return {"ok": True, "design": layouts.public(design), "actions": [], "reply": ""}
             if op == "build":

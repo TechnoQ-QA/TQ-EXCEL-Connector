@@ -45,7 +45,7 @@ import ledger as ledger_module  # noqa: E402
 import licence as licence_module  # noqa: E402
 import tqcrypto  # noqa: E402
 
-VERSION = "1.1.0"
+VERSION = "1.3.0"
 FROZEN = bool(getattr(sys, "frozen", False))   # running as the installed TQConnector.exe
 if FROZEN:
     ROOT = os.path.dirname(os.path.abspath(sys.executable))
@@ -353,6 +353,29 @@ class MockBackend:
                 })
         return {"truncated": len(rows) > 1000, "rows": rows[:1000]}
 
+    def _library(self, action, payload):
+        """The company report library, kept in memory for sample data (in NetSuite: tq_library.json)."""
+        items = self.__dict__.setdefault("library", {})
+        rows = lambda: {"items": sorted([{k: v for k, v in dict(it, id=i, mine=True).items() if k != "design"}  # noqa: E731
+                                         for i, it in items.items()], key=lambda r: r["name"]), "canManage": True}
+        if action == "librarySave":
+            name = _text(payload.get("name"))[:60]
+            if not name or not isinstance(payload.get("design"), dict):
+                raise ValueError("Give the layout a name")
+            key = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "layout"
+            replaced = key in items
+            items[key] = {"name": name, "description": _text(payload.get("description"))[:200], "by": "Sample User",
+                          "at": "2026-11-19", "design": payload["design"]}
+            return dict(rows(), saved=key, replaced=replaced)
+        key = _text(payload.get("id"))
+        if action == "libraryLoad":
+            if key not in items:
+                raise ValueError("That layout is no longer in the library")
+            return {"item": dict(items[key], id=key)}
+        if action == "libraryDelete":
+            items.pop(key, None)
+        return rows()
+
     def handle(self, payload):
         try:
             action = payload.get("action")
@@ -396,6 +419,8 @@ class MockBackend:
                     {"key": "u1", "label": "PC-1", "user": "Sample User", "last": "2026-11-18", "mine": True}]}
             if action == "seatRelease":
                 return {"ok": True, "canRelease": True, "days": 30, "seats": []}
+            if action in ("libraryList", "librarySave", "libraryLoad", "libraryDelete"):
+                return dict(ok=True, **self._library(action, payload))
             if action == "budgetInfo":
                 years = sorted({p["name"][-4:] for p in MOCK_PERIODS})
                 return {"ok": True, "canWrite": True, "recordOk": True, "categories": ["Budget - A", "Budget - B"],

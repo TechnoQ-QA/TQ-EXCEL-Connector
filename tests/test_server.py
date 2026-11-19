@@ -182,7 +182,7 @@ class HttpTest(unittest.TestCase):
                          {"ok": True, "mode": "sample", "chat": True, "ai": False, "version": server.VERSION,
                           "licence": None, "configured": False, "seats": None, "update": None,
                           "signIn": {"mode": "sample"}})
-        for name in ("taskpane.html", "functions.js", "chat.js", "designer.js", "data.js", "functions.json", "manifest.xml",
+        for name in ("taskpane.html", "setup.html", "panel.css", "nav.js", "library.js", "drill.html", "shortcuts.json", "functions.js", "chat.js", "designer.js", "data.js", "functions.json", "manifest.xml",
                      "assets/icon-32.png"):
             with urllib.request.urlopen(self.base + "/" + name, timeout=10) as response:
                 self.assertEqual(response.status, 200, name)
@@ -479,6 +479,30 @@ class LayoutTest(unittest.TestCase):
 
     def ask(self, message, rows=LAYOUT, last=None):
         return self.chat.handle({"message": message, "context": self.context(rows, last)})
+
+    def test_company_library_round_trip(self):
+        """Save a layout to the library, then use it in another workbook: same lines, new names, report built."""
+        made = self.chat.design({"op": "new", "args": {"template": "summary"}, "context": {"layouts": []}})
+        sheet = [a for a in made["actions"] if a["sheetName"].startswith("TQ Layout")][0]
+        context = {"layouts": [{"name": sheet["sheetName"], "row": 0, "rows": sheet["rows"]}], "sheets": []}
+        out = self.chat.design({"op": "libraryExport", "args": {"layout": sheet["sheetName"]}, "context": context})
+        self.assertTrue(out["ok"])
+        backend = server.MockBackend()
+        saved = backend.handle({"action": "librarySave", "name": "Group monthly pack", "design": out["design"]})
+        self.assertEqual(saved["saved"], "group-monthly-pack")
+        self.assertEqual([i["name"] for i in backend.handle({"action": "libraryList"})["items"]], ["Group monthly pack"])
+        item = backend.handle({"action": "libraryLoad", "id": "group-monthly-pack"})["item"]
+        other = {"layouts": [{"name": sheet["sheetName"], "row": 0, "rows": sheet["rows"]}],
+                 "sheets": [out["title"][:31]]}
+        used = self.chat.design({"op": "libraryImport", "args": {"design": item["design"]}, "context": other})
+        self.assertTrue(used["ok"], used.get("error"))
+        names = [a["sheetName"] for a in used["actions"]]
+        self.assertNotIn(sheet["sheetName"], names)   # a free layout name: the workbook already has the original
+        self.assertTrue(any(n.startswith("TQ Layout") for n in names))
+        self.assertIn("company library", used["reply"])
+        self.assertEqual(backend.handle({"action": "libraryDelete", "id": "group-monthly-pack"})["items"], [])
+        bad = self.chat.design({"op": "libraryImport", "args": {"design": {"x": 1}}, "context": other})
+        self.assertFalse(bad["ok"])
 
     def total(self, account, start, end, **segments):
         return self.ledger.balances([dict(account=account, fromPeriod=start, toPeriod=end, **segments)])[0]["value"]

@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TQ Drill Down</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <link rel="stylesheet" href="panel.css?v=121" />
+  <style>
+    body { padding: 0; }
+    .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+    .bar h1 { font-size: 15px; font-weight: 600; margin: 0; flex: 1 1 260px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bar .field { width: 220px; margin: 0; }
+    .wrap { flex: 1; min-height: 0; overflow: auto; }
+    table { font-size: 12.5px; }
+    th { cursor: pointer; user-select: none; white-space: nowrap; }
+    th[aria-sort="ascending"]::after { content: " \25B2"; font-size: 9px; }
+    th[aria-sort="descending"]::after { content: " \25BC"; font-size: 9px; }
+    td { white-space: nowrap; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+    tfoot td { font-weight: 600; background: var(--surface-2); position: sticky; bottom: 0; }
+    .foot { display: flex; gap: 10px; align-items: center; padding: 10px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12.5px; }
+    .foot .grow { flex: 1; }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <button class="btn" id="back" hidden>‹ Accounts</button>
+    <h1 id="title">Loading…</h1>
+    <input class="field" id="search" type="search" placeholder="Search these rows…" aria-label="Search these rows" />
+    <button class="btn" id="toSheet">Send to a new sheet</button>
+    <button class="btn primary" id="close">Close</button>
+  </div>
+  <div class="wrap"><table><thead id="head"></thead><tbody id="body"></tbody><tfoot id="total"></tfoot></table></div>
+  <div class="foot"><span class="grow" id="note"></span></div>
+
+  <script>
+  (function () {
+    'use strict';
+    var $ = function (id) { return document.getElementById(id); };
+    var ask = {};
+    try { ask = JSON.parse(decodeURIComponent(location.hash.slice(1))); } catch (e) { ask = {}; }
+    var view = null;        // { kind, title, cols, rows }
+    var accountsView = null; // to go back to after drilling into one account
+    var sortBy = -1, sortDir = 1;
+    var money = function (n) { return Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+
+    function api(payload) {
+      return fetch('/api', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { if (!d || !d.ok) throw new Error((d && d.error) || 'Request failed'); return d; });
+    }
+    function describe(r) {
+      var parts = [r.account, r.fromPeriod + (r.toPeriod ? ' to ' + r.toPeriod : '')];
+      ['subsidiary', 'department', 'class', 'location', 'filters'].forEach(function (k) { if (r[k]) parts.push(r[k]); });
+      return parts.join(' · ');
+    }
+    function openUrl(url) {
+      try { if (window.Office && Office.context && Office.context.ui && Office.context.ui.openBrowserWindow) { Office.context.ui.openBrowserWindow(url); return; } } catch (e) { /* below */ }
+      window.open(url, '_blank');
+    }
+    function tell(parent) {
+      try { Office.context.ui.messageParent(JSON.stringify(parent)); return true; } catch (e) { return false; }
+    }
+
+    function transactions(request) {
+      $('title').textContent = 'Loading transactions…';
+      return api({ action: 'transactions', request: request }).then(function (d) {
+        show({ kind: 'transactions', title: 'Transactions: ' + describe(request),
+          cols: ['Date', 'Number', 'Type', 'Name', 'Memo', 'Amount'],
+          rows: d.rows.map(function (r) { return { cells: [r.date, r.number, r.type, r.entity, r.memo, Number(r.amount)], url: r.url }; }),
+          note: d.rows.length + ' line(s)' + (d.truncated ? ' (list cut at 1,000)' : '') + '. Click a number to open it in NetSuite.' });
+      });
+    }
+    function breakdown(request) {
+      $('title').textContent = 'Loading the accounts…';
+      return api({ action: 'breakdown', request: request }).then(function (d) {
+        if (d.rows.length === 1 && d.rows[0].request) return transactions(d.rows[0].request);
+        accountsView = { kind: 'accounts', title: (d.kind === 'budget' ? 'Budget by account: ' : 'Accounts: ') + describe(request),
+          cols: ['Account', 'Name', 'Type', 'Amount'],
+          rows: d.rows.map(function (r) { return { cells: [r.account, r.name, r.type, Number(r.amount)], request: r.request }; }),
+          note: d.rows.length + ' account(s) with an amount.' + (d.kind === 'budget' ? ' A budget has no transactions behind it.' : ' Click an account for its transactions.') };
+        show(accountsView);
+      });
+    }
+
+    function show(v) {
+      view = v;
+      sortBy = -1;
+      $('search').value = '';
+      $('back').hidden = !(v.kind === 'transactions' && accountsView);
+      $('title').textContent = v.title;
+      $('title').title = v.title;
+      $('note').textContent = v.note;
+      var tr = document.createElement('tr');
+      v.cols.forEach(function (c, n) {
+        var th = document.createElement('th');
+        th.textContent = c;
+        th.tabIndex = 0;
+        if (n === v.cols.length - 1) th.className = 'num';
+        var sort = function () { sortDir = sortBy === n ? -sortDir : 1; sortBy = n; draw(); };
+        th.addEventListener('click', sort);
+        th.addEventListener('keydown', function (e) { if (e.key === 'Enter') sort(); });
+        tr.appendChild(th);
+      });
+      $('head').textContent = '';
+      $('head').appendChild(tr);
+      draw();
+    }
+
+    function visible() {
+      var q = $('search').value.trim().toLowerCase();
+      var rows = view.rows.filter(function (r) { return !q || r.cells.join(' ').toLowerCase().indexOf(q) !== -1; });
+      if (sortBy >= 0) {
+        rows = rows.slice().sort(function (a, b) {
+          var x = a.cells[sortBy], y = b.cells[sortBy];
+          return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x || '').localeCompare(String(y || ''))) * sortDir;
+        });
+      }
+      return rows;
+    }
+
+    function draw() {
+      Array.prototype.forEach.call(document.querySelectorAll('#head th'), function (th, n) {
+        if (n === sortBy) th.setAttribute('aria-sort', sortDir > 0 ? 'ascending' : 'descending'); else th.removeAttribute('aria-sort');
+      });
+      var body = $('body');
+      body.textContent = '';
+      var rows = visible();
+      var total = 0;
+      rows.forEach(function (r) {
+        var tr = document.createElement('tr');
+        r.cells.forEach(function (c, n) {
+          var td = document.createElement('td');
+          var last = n === r.cells.length - 1;
+          if (last) { td.className = 'num'; td.textContent = money(c); total += c; }
+          else if (view.kind === 'transactions' && n === 1 && r.url) {
+            var a = document.createElement('a');
+            a.href = r.url;
+            a.textContent = c || 'open';
+            a.addEventListener('click', function (e) { e.preventDefault(); openUrl(r.url); });
+            td.appendChild(a);
+          } else td.textContent = c || '';
+          td.title = td.textContent;
+          tr.appendChild(td);
+        });
+        if (view.kind === 'accounts' && r.request) {
+          tr.className = 'clickable';
+          tr.tabIndex = 0;
+          var open = function () { transactions(r.request).catch(fail); };
+          tr.addEventListener('click', open);
+          tr.addEventListener('keydown', function (e) { if (e.key === 'Enter') open(); });
+        }
+        body.appendChild(tr);
+      });
+      var foot = document.createElement('tr');
+      view.cols.forEach(function (c, n) {
+        var td = document.createElement('td');
+        if (n === 0) td.textContent = 'Total (' + rows.length + ')';
+        if (n === view.cols.length - 1) { td.className = 'num'; td.textContent = money(total); }
+        foot.appendChild(td);
+      });
+      $('total').textContent = '';
+      $('total').appendChild(foot);
+    }
+
+    function fail(e) { $('title').textContent = e.message; }
+
+    $('search').addEventListener('input', function () { if (view) draw(); });
+    $('back').addEventListener('click', function () { if (accountsView) show(accountsView); });
+    $('close').addEventListener('click', function () { if (!tell({ close: true })) window.close(); });
+    $('toSheet').addEventListener('click', function () {
+      if (!view) return;
+      var rows = visible().map(function (r) {
+        return r.cells.map(function (c, n) {
+          if (typeof c === 'number') return c;
+          if (view.kind === 'transactions' && n === 1 && r.url) return '=HYPERLINK("' + r.url + '","' + String(c || 'open').replace(/"/g, '""') + '")';
+          return "'" + (c || '');
+        });
+      });
+      if (tell({ toSheet: { head: view.cols, rows: rows } })) $('note').textContent = 'Sent ' + rows.length + ' row(s) to a new sheet in Excel.';
+      else $('note').textContent = 'Open this from the panel in Excel to send rows to a sheet.';
+    });
+
+    var go = function () {
+      if (!ask.request) { fail(new Error('Nothing to show: drill down from the panel first.')); return; }
+      (ask.kind === 'breakdown' ? breakdown(ask.request) : transactions(ask.request)).catch(fail);
+    };
+    if (window.Office && Office.onReady) Office.onReady(go); else go();
+  })();
+  </script>
+</body>
+</html>

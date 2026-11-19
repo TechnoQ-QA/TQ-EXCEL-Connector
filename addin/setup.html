@@ -4,100 +4,187 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>TQ Connector setup</title>
+  <link rel="stylesheet" href="panel.css?v=120" />
   <style>
-    :root { --ink: #1f2933; --muted: #5f6b7a; --line: #d9dee5; --accent: #0b5cad; --bad: #b3261e; --ok: #1a7f4b; --soft: #f6f8fa; }
-    * { box-sizing: border-box; }
-    body { margin: 0; padding: 14px; font: 13px/1.45 "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #fff; max-width: 640px; }
-    h1 { font-size: 16px; margin: 0 0 4px; }
-    h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 18px 0 6px; }
-    label { display: block; margin: 8px 0 2px; color: var(--muted); font-size: 12px; }
-    input, select, textarea { font: inherit; color: var(--ink); width: 100%; padding: 5px 6px; border: 1px solid var(--line); border-radius: 5px; }
-    textarea { font: 12px Consolas, monospace; resize: vertical; }
-    label.check { color: var(--ink); font-size: 13px; }
-    label.check input { width: auto; }
-    button { font: inherit; padding: 6px 12px; border: 1px solid var(--line); border-radius: 5px; background: var(--soft); color: var(--ink); cursor: pointer; }
-    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .hint { color: var(--muted); font-size: 12px; }
-    .box { padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; margin-top: 8px; }
-    .box.ok { border-color: var(--ok); color: var(--ok); }
-    .box.bad { border-color: var(--bad); color: var(--bad); }
-    a { color: var(--accent); }
-    [hidden] { display: none !important; }
+    body { display: block; height: auto; min-height: 100%; }
+    .setup { display: grid; grid-template-columns: 200px minmax(0, 1fr); align-content: start; min-height: 100vh; }
+    .snav { border-right: 1px solid var(--line); padding: 12px 8px; background: var(--surface); }
+    .snav .brand { display: flex; gap: 10px; align-items: center; padding: 2px 8px 14px; font-weight: 600; }
+    .snav .brand a { font-weight: 400; font-size: 12.5px; text-decoration: none; }
+    .snav nav { display: flex; flex-direction: column; gap: 2px; }
+    .snav nav button { display: flex; align-items: center; justify-content: space-between; width: 100%; border: 0; background: none; padding: 8px 10px; border-radius: 6px; cursor: pointer; text-align: left; }
+    .snav nav button:hover { background: var(--surface-2); }
+    .snav nav button.on { background: var(--bg); font-weight: 600; box-shadow: var(--shadow); }
+    .snav nav em { font-style: normal; font-size: 11px; color: var(--ok); }
+    .snav nav em.bad { color: var(--bad); }
+    .smain { padding: 18px 24px 90px; max-width: 680px; min-width: 0; }
+    .smain .sub, .smain .hint, .smain .box, .smain code { overflow-wrap: anywhere; }
+    .smain td:not(:first-child) { white-space: nowrap; }
+    .smain h2 { font-size: 19px; margin-bottom: 4px; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin: 6px 0 16px; }
+    .stat { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+    .stat small { color: var(--muted); font-size: 12px; display: block; }
+    .stat b { font-size: 14.5px; display: flex; align-items: center; gap: 6px; margin: 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .box { padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; margin-top: 10px; font-size: 12.5px; }
+    .box.ok { border-color: var(--ok); background: var(--ok-soft); }
+    .box.bad { border-color: var(--bad); background: var(--bad-soft); }
+    .smain input:not([type="radio"]):not([type="checkbox"]):not([type="file"]), .smain select, .smain textarea {
+      width: 100%; border: 1px solid var(--line-strong); border-radius: 6px; padding: 6px 9px; background: var(--bg); margin-top: 4px; min-height: 30px; }
+    .smain textarea { font: 12px Consolas, monospace; resize: vertical; }
+    .smain code { display: inline; padding: 1px 4px; }
+    .smain table { font-size: 13px; }
+    .smain td, .smain th { white-space: normal; }
+    .logo-preview { display: flex; align-items: center; justify-content: center; height: 90px; border: 1px dashed var(--line-strong); border-radius: 8px; margin: 10px 0; background: var(--surface); }
+    .logo-preview img { max-height: 64px; max-width: 260px; }
+    .savebar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; gap: 10px; align-items: center; padding: 10px 24px; border-top: 1px solid var(--line); background: var(--bg); }
+    .savebar .grow { flex: 1; min-width: 0; }
+    .savebar #result { margin: 0; }
+    @media (min-width: 721px) { .savebar { left: 200px; } }
+    @media (max-width: 720px) {
+      .setup { grid-template-columns: minmax(0, 1fr); }
+      .snav { min-width: 0; }
+      .snav { border-right: 0; border-bottom: 1px solid var(--line); padding: 8px 10px 6px; position: sticky; top: 0; z-index: 3; }
+      .snav .brand { padding: 2px 2px 8px; }
+      .snav nav { flex-direction: row; overflow-x: auto; gap: 6px; padding-bottom: 4px; }
+      .snav nav button { width: auto; white-space: nowrap; border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; gap: 6px; }
+      .snav nav button.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: none; }
+      .smain { padding: 14px 14px 90px; }
+      .savebar { padding: 10px 14px; }
+    }
   </style>
 </head>
 <body>
-  <p><a href="taskpane.html">&larr; Back to the panel</a></p>
-  <h1>TQ Connector setup</h1>
-  <p class="hint">Done once per PC by whoever installs the connector. The details are saved on this PC only
-    (<span id="folder">the connector's data folder</span>) and are never shown again here.</p>
-  <div id="state" class="box">Reading the current settings…</div>
+  <div class="setup">
+    <aside class="snav">
+      <div class="brand"><span class="mark">TQ</span><span style="flex:1">Setup</span><a href="taskpane.html">‹ Back to the panel</a></div>
+      <nav id="snav">
+        <button data-section="overview" class="on">Overview</button>
+        <button data-section="connection">NetSuite connection <em id="navConnection"></em></button>
+        <button data-section="licence">Licence <em id="navLicence"></em></button>
+        <button data-section="logo">Company logo</button>
+        <button data-section="seats">Seats <em id="navSeats"></em></button>
+        <button data-section="updates">Updates</button>
+        <button data-section="ai">AI add-on</button>
+      </nav>
+    </aside>
 
-  <h2>Licence</h2>
-  <div id="licenceState" class="box">No licence yet.</div>
-  <label for="licence">Paste the licence from Techno Q (leave empty to keep the current one)</label>
-  <textarea id="licence" rows="4" spellcheck="false" placeholder='{"customer": "...", "account": "...", "signature": "..."}'></textarea>
+    <main class="smain">
+      <!-- overview -->
+      <section data-section="overview">
+        <h2>Overview</h2>
+        <p class="sub">Done once per PC by whoever installs the connector. The details are saved on this PC only
+          (<span id="folder">the connector's data folder</span>) and secrets are never shown again.</p>
+        <div class="stats">
+          <div class="stat"><small>NetSuite</small><b><i class="dot" id="statDot"></i><span id="statNetsuite">…</span></b><small id="statAccount"></small></div>
+          <div class="stat"><small>Signed in</small><b id="statUser">…</b><small id="statRole"></small></div>
+          <div class="stat"><small>Licence</small><b id="statLicence">…</b><small id="statLicenceNote"></small></div>
+          <div class="stat"><small>Version</small><b id="statVersion">…</b><small id="statUpdate"></small></div>
+        </div>
+        <div id="state" class="box">Reading the current settings…</div>
+      </section>
 
-  <h2>NetSuite connection</h2>
-  <label for="accountId">Account ID (as in the NetSuite address, e.g. 1234567 or 1234567_SB1)</label>
-  <input id="accountId" autocomplete="off" />
-  <label for="restletUrl">RESTlet External URL (Customization > Scripting > Script Deployments > TQ Excel Connector RESTlet)</label>
-  <input id="restletUrl" autocomplete="off" placeholder="https://1234567.restlets.api.netsuite.com/app/site/hosting/restlet.nl?script=...&amp;deploy=1" />
-  <label>How people connect</label>
-  <label class="check"><input type="radio" name="authMode" id="modeOauth" value="oauth2" checked /> Sign in with NetSuite (recommended): each person signs in with their own NetSuite login and role</label>
-  <label class="check"><input type="radio" name="authMode" id="modeTba" value="tba" /> Access tokens (older; NetSuite retires them by 2027): one shared token for this PC</label>
-  <div id="oauthBox">
-    <label for="clientId">Client ID of the TQ Excel Connector integration (Setup > Integration > Manage Integrations)</label>
-    <input id="clientId" autocomplete="off" />
-    <p class="hint">The integration needs: Authorization Code Grant, Public Client, scope RESTlets, and the redirect URI
-      <code id="redirectUri">https://localhost:3000/oauth/callback</code>.</p>
-    <div id="signInState" class="box" hidden></div>
-    <p><a id="signInLink" href="/oauth/start" target="_blank">Sign in with NetSuite</a> &nbsp; <button id="signOut" hidden>Sign out</button></p>
+      <!-- connection -->
+      <section data-section="connection" hidden>
+        <h2>NetSuite connection</h2>
+        <p class="sub">The account and how people sign in. Your NetSuite administrator has these details.</p>
+        <label for="accountId">Account ID (as in the NetSuite address, e.g. 1234567 or 1234567_SB1)</label>
+        <input id="accountId" autocomplete="off" />
+        <label>How people connect</label>
+        <label class="check"><input type="radio" name="authMode" id="modeOauth" value="oauth2" checked /> Sign in with NetSuite (recommended): each person uses their own NetSuite login and role</label>
+        <label class="check"><input type="radio" name="authMode" id="modeTba" value="tba" /> Access tokens (older; NetSuite retires them by 2027): one shared token for this PC</label>
+        <div id="oauthBox">
+          <div id="signInState" class="box" hidden></div>
+          <div class="row wrap" style="margin-top:10px">
+            <a id="signInLink" class="btn primary" href="/oauth/start" target="_blank" style="text-decoration:none">Sign in with NetSuite</a>
+            <button id="signOut" class="btn" hidden>Sign out</button>
+          </div>
+        </div>
+        <div id="tbaBox" hidden>
+          <label for="consumerKey">Consumer key</label>
+          <input id="consumerKey" autocomplete="off" />
+          <label for="consumerSecret">Consumer secret</label>
+          <input id="consumerSecret" type="password" autocomplete="new-password" />
+          <label for="tokenId">Token ID</label>
+          <input id="tokenId" autocomplete="off" />
+          <label for="tokenSecret">Token secret</label>
+          <input id="tokenSecret" type="password" autocomplete="new-password" />
+          <p id="secretsNote" class="hint" hidden>Secrets are saved already. Leave the two secret boxes empty to keep them.</p>
+        </div>
+        <label for="fiscal">First month of the fiscal year</label>
+        <select id="fiscal"></select>
+        <details class="fold" id="advanced">
+          <summary>Advanced: RESTlet address and client ID</summary>
+          <label for="restletUrl">RESTlet External URL (Customization &gt; Scripting &gt; Script Deployments &gt; TQ Excel Connector RESTlet)</label>
+          <input id="restletUrl" autocomplete="off" placeholder="https://1234567.restlets.api.netsuite.com/app/site/hosting/restlet.nl?script=...&amp;deploy=1" />
+          <label for="clientId">Client ID of the TQ Excel Connector integration (Setup &gt; Integration &gt; Manage Integrations)</label>
+          <input id="clientId" autocomplete="off" />
+          <p class="hint">The integration needs: Authorization Code Grant, Public Client, scope RESTlets, and the redirect URI
+            <code id="redirectUri">https://localhost:3000/oauth/callback</code>.</p>
+        </details>
+      </section>
+
+      <!-- licence -->
+      <section data-section="licence" hidden>
+        <h2>Licence</h2>
+        <p class="sub">The licence file from Techno Q: who it is for, the NetSuite account and the number of users.</p>
+        <div id="licenceState" class="box">No licence yet.</div>
+        <label for="licence">Paste a new licence (leave empty to keep the current one)</label>
+        <textarea id="licence" rows="5" spellcheck="false" placeholder='{"customer": "...", "account": "...", "signature": "..."}'></textarea>
+      </section>
+
+      <!-- logo -->
+      <section data-section="logo" hidden>
+        <h2>Company logo</h2>
+        <p class="sub">Shown in the panel, on dashboards and on PDF packs. By default the company logo set in NetSuite
+          (Setup &gt; Company &gt; Company Information) is used; upload a picture here to use another one (PNG or JPEG, up to 1 MB).</p>
+        <div class="logo-preview"><img id="logoPreview" src="/logo" alt="The logo in use" /><span id="logoNone" class="hint" hidden>No logo yet</span></div>
+        <div id="logoState" class="hint"></div>
+        <div class="row wrap" style="margin-top:10px">
+          <label class="btn" style="margin:0;color:var(--text);font-size:13px">Upload a picture… <input type="file" id="logoFile" accept="image/png,image/jpeg" hidden /></label>
+          <button id="logoRemove" class="btn">Use the NetSuite logo</button>
+        </div>
+      </section>
+
+      <!-- seats -->
+      <section data-section="seats" hidden>
+        <h2>Seats</h2>
+        <p class="sub">Who uses the licence's seats. With Sign in with NetSuite a seat belongs to a person (whichever PC they
+          use); with access tokens, to a PC. A seat not used for 30 days frees itself. Administrators can release anyone's seat.</p>
+        <div id="seatList" class="box">Open after connecting to NetSuite.</div>
+        <div style="margin-top:10px"><button id="seatRefresh" class="btn">Read again</button></div>
+      </section>
+
+      <!-- updates -->
+      <section data-section="updates" hidden>
+        <h2>Updates</h2>
+        <p class="sub">The address Techno Q gave you for updates (optional). The panel then offers newer versions; an
+          update is installed only if it is signed by Techno Q.</p>
+        <label for="updateUrl">Update address</label>
+        <input id="updateUrl" autocomplete="off" placeholder="https://..." />
+        <div class="row wrap" style="margin-top:10px">
+          <button id="checkUpdate" class="btn">Check for an update</button>
+          <button id="installUpdate" class="btn primary" hidden>Install it</button>
+        </div>
+        <div id="updateState" class="box" hidden></div>
+      </section>
+
+      <!-- AI -->
+      <section data-section="ai" hidden>
+        <h2>AI add-on (optional)</h2>
+        <p class="sub">Off unless your own Anthropic API key is pasted here. Used only for pictures of report formats,
+          messages starting with ai:, and requests the built-in chat does not understand. Your organisation pays for each use.</p>
+        <label for="aiKey">API key (leave empty to keep the current setting)</label>
+        <input id="aiKey" type="password" autocomplete="new-password" />
+        <label class="check"><input type="checkbox" id="aiOff" /> Switch the AI add-on off</label>
+      </section>
+    </main>
   </div>
-  <div id="tbaBox" hidden>
-  <label for="consumerKey">Consumer key</label>
-  <input id="consumerKey" autocomplete="off" />
-  <label for="consumerSecret">Consumer secret</label>
-  <input id="consumerSecret" type="password" autocomplete="new-password" />
-  <label for="tokenId">Token ID</label>
-  <input id="tokenId" autocomplete="off" />
-  <label for="tokenSecret">Token secret</label>
-  <input id="tokenSecret" type="password" autocomplete="new-password" />
-  <p id="secretsNote" class="hint" hidden>Secrets are saved already. Leave the two secret boxes empty to keep them.</p>
+
+  <div class="savebar" id="savebar" hidden>
+    <div class="grow"><div id="result" class="box" hidden></div></div>
+    <button id="save" class="btn primary">Save and test the connection</button>
   </div>
-  <label for="fiscal">First month of the fiscal year</label>
-  <select id="fiscal"></select>
 
-  <h2>Logo</h2>
-  <p class="hint">Shown in the panel, on dashboards and on PDF packs. By default the company logo set in NetSuite
-    (Setup > Company > Company Information) is used; upload a picture here to use another one.</p>
-  <p><img id="logoPreview" src="/logo" alt="" style="max-height:60px;max-width:260px;border:1px solid #d9dee5;padding:4px" /></p>
-  <div id="logoState" class="hint"></div>
-  <p><input type="file" id="logoFile" accept="image/png,image/jpeg" /> <button id="logoRemove">Use the NetSuite logo</button></p>
-
-  <h2>Seats</h2>
-  <p class="hint">Who uses the licence's seats. With Sign in with NetSuite a seat belongs to a person (whichever PC they
-    use); with access tokens, to a PC. A seat not used for 30 days frees itself. Administrators can release anyone's seat.</p>
-  <div id="seatList" class="box">Open after connecting to NetSuite.</div>
-  <p><button id="seatRefresh">Show seats</button></p>
-
-  <h2>Updates</h2>
-  <p class="hint">The address Techno Q gave you for updates (optional). The panel then offers newer versions; an
-    update is installed only if it is signed by Techno Q.</p>
-  <label for="updateUrl">Update address</label>
-  <input id="updateUrl" autocomplete="off" placeholder="https://..." />
-  <p><button id="checkUpdate">Check for an update</button> <button id="installUpdate" hidden>Install it</button></p>
-  <div id="updateState" class="box" hidden></div>
-
-  <h2>AI add-on (optional)</h2>
-  <p class="hint">Off unless your own Anthropic API key is pasted here. Used only for pictures of report formats,
-    messages starting with ai:, and requests the built-in chat does not understand. Your organisation pays for each use.</p>
-  <label for="aiKey">API key (leave empty to keep the current setting)</label>
-  <input id="aiKey" type="password" autocomplete="new-password" />
-  <label class="check"><input type="checkbox" id="aiOff" /> Switch the AI add-on off</label>
-
-  <p style="margin-top:16px"><button id="save" class="primary">Save and test the connection</button></p>
-  <div id="result" class="box" hidden></div>
-
-  <script src="setup.js"></script>
+  <script src="setup.js?v=120"></script>
 </body>
 </html>

@@ -68,6 +68,8 @@ the connector at the new RESTlet's URL, then make the old script record inactive
   14736) is unused and can be deleted by hand.
 - **Nov 19 2026:** tq_excel_core.js version 6 (seats per NetSuite user, seat list and release) deployed the
   same way, 0 errors; ping answers version 6.
+- **Nov 19 2026:** version 7 (company report library, tq_library.json) deployed the same way, 0 errors; ping
+  answers version 7, and a library entry was saved, read and removed again.
 
 On this PC the CLI runs from a terminal as `%APPDATA%\npm\suitecloud.cmd` (Node.js and the npm folder must be on
 the PATH). The sandbox sign-in is saved under the authentication ID `tq-sandbox`; `netsuite/sdf/project.json`

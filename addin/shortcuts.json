@@ -1,0 +1,18 @@
+{
+  "actions": [
+    { "id": "drillDown", "type": "ExecuteFunction", "name": "TQ: Drill down on the selected cell" },
+    { "id": "refreshSheet", "type": "ExecuteFunction", "name": "TQ: Refresh this sheet" },
+    { "id": "refreshAll", "type": "ExecuteFunction", "name": "TQ: Refresh the whole workbook" },
+    { "id": "refreshSelection", "type": "ExecuteFunction", "name": "TQ: Refresh the selected cells" },
+    { "id": "newReport", "type": "ExecuteFunction", "name": "TQ: New report" },
+    { "id": "showPanel", "type": "ExecuteFunction", "name": "TQ: Show the panel" }
+  ],
+  "shortcuts": [
+    { "action": "drillDown", "key": { "default": "Ctrl+Alt+Shift+D", "mac": "Command+Option+Shift+D" } },
+    { "action": "refreshSheet", "key": { "default": "Ctrl+Alt+Shift+R", "mac": "Command+Option+Shift+R" } },
+    { "action": "refreshAll", "key": { "default": "Ctrl+Alt+Shift+A", "mac": "Command+Option+Shift+A" } },
+    { "action": "refreshSelection", "key": { "default": "Ctrl+Alt+Shift+S", "mac": "Command+Option+Shift+S" } },
+    { "action": "newReport", "key": { "default": "Ctrl+Alt+Shift+N", "mac": "Command+Option+Shift+N" } },
+    { "action": "showPanel", "key": { "default": "Ctrl+Alt+Shift+T", "mac": "Command+Option+Shift+T" } }
+  ]
+}

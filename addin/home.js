@@ -1,16 +1,59 @@
-/* TQ Excel Connector - the top of the Reports tab and the ribbon.
- *   - a card that follows the open sheet: on a report its month picker, refresh, edit, filters and send; on a
- *     layout, budget or journal sheet what that sheet needs; elsewhere New report.
- *   - the report wizard: one question per step, then one request that builds a layout report (so every report
- *     it makes can be changed and rebuilt in place).
- *   - the ribbon tab's buttons (Office.actions), which run here because the add-in shares one runtime. */
+/* TQ Excel Connector - Home, This report, the welcome screen, the report wizard and the ribbon.
+ *   - This report follows the open sheet: on a TQ report or dashboard it shows the month (with ‹ ›), the
+ *     filters as chips, and the way to its layout, send and dashboard. Other sheets go back to Home, where a
+ *     layout, budget or journal sheet gets a short card of what it needs.
+ *   - Home lists the reports in the workbook; a click opens that sheet.
+ *   - The wizard: one question per step, then one request that builds a layout report (so every report it
+ *     makes can be changed and rebuilt in place).
+ *   - The ribbon tab's buttons (Office.actions), which run here because the add-in shares one runtime. */
 (function () {
   'use strict';
 
   var $ = function (id) { return document.getElementById(id); };
   var LAYOUT_RE = /layout sheet "([^"]+)"/;
+  var DASH_RE = /^Live from NetSuite/;
   var periods = null;   // [{name}] from NetSuite, loaded once
-  var notice = '';      // the last wizard result, shown on the card until another sheet is opened
+  var FOLLOW = ['home', 'report'];   // screens that change by themselves when another sheet is opened
+  var currentSheet = '';             // the sheet on the This report screen
+
+  // ------------------------------------------- when each sheet's numbers came in --
+  // Kept in the workbook's own settings (saved with the file), not in a cell: SHEET NAME -> time.
+  var stamps = {};
+  var saveTimer = null;
+  function key(name) { return String(name || '').replace(/'/g, '').toUpperCase(); }
+  function loadStamps() {
+    try { stamps = Office.context.document.settings.get('tqRefreshed') || {}; } catch (e) { stamps = {}; }
+  }
+  function stampSheets(names) {
+    var now = Date.now();
+    names.forEach(function (n) { stamps[key(n)] = now; });
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      try {
+        Office.context.document.settings.set('tqRefreshed', stamps);
+        Office.context.document.settings.saveAsync(function () {});
+      } catch (e) { /* outside Excel */ }
+    }, 1500);
+    showStamp();
+  }
+  function stampOf(name) {
+    var t = stamps[key(name)];
+    if (!t) return { text: 'Not refreshed in this workbook yet', old: true };
+    var d = new Date(t);
+    var today = d.toDateString() === new Date().toDateString();
+    var time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return today ? { text: 'Refreshed today at ' + time, short: 'refreshed ' + time, old: false }
+      : { text: 'Last refreshed ' + d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' at ' + time + ': Refresh for the latest numbers',
+        short: 'refreshed ' + d.toLocaleDateString([], { day: 'numeric', month: 'short' }), old: true };
+  }
+  function showStamp() {
+    var box = $('rpStamp');
+    if (!box || !currentSheet || !inExcel()) return;
+    var st = stampOf(currentSheet);
+    box.textContent = st.text;
+    box.className = 'stamp' + (st.old ? ' old' : '');
+    box.hidden = false;
+  }
 
   function el(tag, text, cls) {
     var n = document.createElement(tag);
@@ -19,7 +62,8 @@
     return n;
   }
   function button(text, onClick, cls) {
-    var b = el('button', text, cls);
+    var b = el('button', text, cls || 'btn');
+    b.type = 'button';
     b.addEventListener('click', onClick);
     return b;
   }
@@ -35,14 +79,13 @@
     }
     return periods;
   }
-  function openSection(id) {
-    var s = $(id);
-    if (!s) return;
-    s.open = true;
-    s.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
 
-  // ------------------------------------------------------------------ the card --
+  /* The older section ids, as the screens that now hold them. */
+  var SCREEN_OF = { secFilters: 'report', secLayout: 'layout', secPack: 'send', secBudget: 'upload', secJournal: 'upload',
+    secFormula: 'formulas', secData: 'data', secCharts: 'dash' };
+  function openSection(id) { window.TQNav.go(SCREEN_OF[id] || 'home'); }
+
+  // -------------------------------------------------------- the open sheet --
 
   function readActive() {
     if (!inExcel()) return Promise.resolve({ name: '', a: [] });
@@ -55,121 +98,206 @@
     }).catch(function () { return { name: '', a: [] }; });
   }
 
-  function card(title, lines, buttons) {
+  function kindOf(a) {
+    var cell = function (r, c) { return a[r] && a[r][c] !== undefined ? String(a[r][c]) : ''; };
+    var layout = LAYOUT_RE.exec(cell(1, 0));
+    if (DASH_RE.test(cell(1, 0)) && cell(2, 0) === 'Other filters') return { kind: 'dashboard', title: cell(0, 0), month: cell(7, 1) };
+    if (layout || cell(2, 0) === 'Other filters') {
+      return { kind: 'report', title: cell(0, 0), layout: layout && layout[1], month: cell(7, 0) === 'Month' ? cell(7, 1) : '' };
+    }
+    return { kind: '' };
+  }
+
+  /* Called when the panel opens and whenever another sheet is opened. */
+  function showCard() {
+    listReports();
+    return readActive().then(function (s) {
+      var k = kindOf(s.a || []);
+      var follow = FOLLOW.indexOf(window.TQNav.current()) !== -1;
+      contextCard(s.name);
+      if (k.kind) {
+        fillReport(s.name, k);
+        if (follow) window.TQNav.replace('report');
+      } else if (follow && window.TQNav.current() === 'report') {
+        window.TQNav.replace('home');
+      }
+    });
+  }
+
+  /* On Home: what a layout, budget or journal sheet needs (nothing on other sheets). */
+  function contextCard(name) {
     var box = $('homeCard');
     box.textContent = '';
-    box.appendChild(el('h3', title));
-    if (notice) box.appendChild(el('div', notice, 'status-line'));
-    lines.forEach(function (l) { if (l) box.appendChild(typeof l === 'string' ? el('div', l, 'hint') : l); });
-    var row = el('div', '', 'row');
-    row.style.marginTop = '6px';
-    buttons.forEach(function (b) { row.appendChild(b); });
-    box.appendChild(row);
+    var add = function (title, line, buttons) {
+      box.appendChild(el('h3', title));
+      box.appendChild(el('div', line, 'hint'));
+      var row = el('div', '', 'row wrap');
+      buttons.forEach(function (b) { row.appendChild(b); });
+      box.appendChild(row);
+      box.hidden = false;
+    };
+    box.hidden = true;
+    if (/^tq layout/i.test(name)) {
+      add('Layout sheet', 'Change the lines and columns here or in the layout screen, then update the report.',
+        [button('Update report', function () { TQDesigner.select(name).then(function () { TQDesigner.build(); }); }, 'btn primary'),
+          button('Open the layout', function () { TQDesigner.select(name).then(function () { window.TQNav.go('layout'); }); })]);
+    } else if (/^tq budget/i.test(name)) {
+      add('Budget sheet', 'Change the numbers, then Check (writes nothing) and Upload.',
+        [button('Check and upload', function () { window.TQNav.go('upload'); }, 'btn primary')]);
+    } else if (/^tq journals/i.test(name)) {
+      add('Journal sheet', 'Rows with the same Entry number become one journal entry.',
+        [button('Check and upload', function () { window.TQNav.go('upload'); }, 'btn primary')]);
+    }
+  }
+
+  var reportLayout = '';   // the layout of the report on the This report screen
+  function fillReport(name, k) {
+    currentSheet = name;
+    showStamp();
+    $('rpTitle').textContent = k.title || name;
+    reportLayout = k.layout || '';
+    $('rpAbout').textContent = k.kind === 'dashboard' ? 'Dashboard on sheet "' + name + '". Change the month or the filters; the tiles and charts follow.'
+      : k.layout ? 'Sheet "' + name + '", from layout "' + k.layout + '". Changes there rebuild it in place.'
+        : 'Sheet "' + name + '". A standard report: ask the chat for changes, or use New report for one you can edit.';
+    $('rpLayoutRow').hidden = !k.layout;
+    $('rpMonthBox').hidden = !k.month;
+    if (k.month) monthPicker(k.month);
   }
 
   function monthPicker(current) {
-    var wrap = el('div');
-    var label = el('label', 'Month (rolls every column)');
-    label.setAttribute('for', 'hMonth');
-    var select = el('select', '', 'field');
-    select.id = 'hMonth';
+    var select = $('hMonth');
+    select.textContent = '';
     var o = el('option', current);
     o.value = current;
     select.appendChild(o);
+    select.value = current;
     months().then(function (list) {
       select.textContent = '';
       list.forEach(function (p) { var x = el('option', p.name); x.value = p.name; select.appendChild(x); });
+      if (!list.some(function (p) { return p.name === current; })) { var y = el('option', current); y.value = current; select.appendChild(y); }
       select.value = current;
     }).catch(function () {});
-    select.addEventListener('change', function () {
-      Excel.run(function (context) {
-        var sheet = context.workbook.worksheets.getActiveWorksheet();
-        sheet.getRange('B8').values = [[select.value]];
-        sheet.calculate(true);
-        return context.sync();
-      }).catch(function () {});
-    });
-    wrap.appendChild(label);
-    wrap.appendChild(select);
-    return wrap;
   }
 
-  function showCard() {
-    return readActive().then(function (s) {
-      var a = s.a || [];
-      var cell = function (r, c) { return a[r] && a[r][c] !== undefined ? String(a[r][c]) : ''; };
-      var newReport = button('New report', openWizard, 'primary');
-      var wand = el('img', '', 'ico');
-      wand.src = 'assets/icon-wizard-16.png';
-      wand.alt = '';
-      newReport.insertBefore(wand, newReport.firstChild);
-      var layout = LAYOUT_RE.exec(cell(1, 0));
-      if (layout || cell(2, 0) === 'Other filters') {
-        var month = cell(7, 0) === 'Month' ? cell(7, 1) : '';
-        var buttons = [button('Refresh sheet', function () { TQPanel.refreshSheet(); }),
-          button('Filters', function () { openSection('secFilters'); })];
-        if (layout) {
-          buttons.push(button('Edit layout', function () {
-            TQDesigner.select(layout[1]).then(function () { openSection('secLayout'); });
-          }));
-        }
-        buttons.push(button('Send', function () { openSection('secPack'); }), newReport);
-        card(cell(0, 0) || s.name, [layout ? 'From layout "' + layout[1] + '": changes there rebuild it in place.'
-          : 'A standard report: ask the chat for changes, or use New report for one you can edit.',
-        month ? monthPicker(month) : null], buttons);
-      } else if (/^tq layout/i.test(s.name)) {
-        card('Layout sheet', ['Change lines and columns here or in Report layout, then update the report.'],
-          [button('Update report', function () { TQDesigner.select(s.name).then(function () { TQDesigner.build(); }); }, 'primary'),
-            button('Report layout', function () { TQDesigner.select(s.name).then(function () { openSection('secLayout'); }); })]);
-      } else if (/^tq budget/i.test(s.name)) {
-        card('Budget sheet', ['Change the numbers, then Check (writes nothing) and Upload.'],
-          [button('Check and upload', function () { openSection('secBudget'); }, 'primary')]);
-      } else if (/^tq journals/i.test(s.name)) {
-        card('Journal sheet', ['Rows with the same Entry number become one journal entry.'],
-          [button('Check and upload', function () { openSection('secJournal'); }, 'primary')]);
-      } else {
-        card('TQ Connector', ['Build a report step by step, or put a NetSuite number in this cell.'],
-          [newReport, button('Insert formula', function () { openSection('secFormula'); })]);
-      }
+  function setMonth(value) {
+    if (!inExcel() || !value) return;
+    Excel.run(function (context) {
+      var sheet = context.workbook.worksheets.getActiveWorksheet();
+      sheet.getRange('B8').values = [[value]];
+      sheet.calculate(true);
+      return context.sync();
+    }).then(function () { TQPanel.say('Month set to ' + value + '. The numbers are being refreshed.'); },
+      function (e) { TQPanel.say(e.message, true); });
+  }
+
+  function stepMonth(by) {
+    var select = $('hMonth');
+    var n = select.selectedIndex + by;
+    if (n < 0 || n >= select.options.length) return;
+    select.selectedIndex = n;
+    setMonth(select.value);
+  }
+
+  /* Home's list of the TQ reports and dashboards in this workbook. */
+  function listReports() {
+    var box = $('reportList');
+    if (!inExcel()) return;
+    Excel.run(function (context) {
+      var sheets = context.workbook.worksheets;
+      sheets.load('items/name,items/visibility');
+      return context.sync().then(function () {
+        var shown = sheets.items.filter(function (s) { return s.visibility === 'Visible'; });
+        var ranges = shown.map(function (s) { var r = s.getRange('A1:B8'); r.load('values'); return r; });
+        return context.sync().then(function () {
+          return shown.map(function (s, n) { return { name: s.name, k: kindOf(ranges[n].values) }; })
+            .filter(function (x) { return x.k.kind; });
+        });
+      });
+    }).then(function (found) {
+      box.textContent = '';
+      if (!found.length) { box.appendChild(el('div', 'No TQ reports yet. Start with New report.', 'empty')); return; }
+      found.forEach(function (x) {
+        var item = el('button', '', 'it');
+        item.type = 'button';
+        var grow = el('div', '', 'grow');
+        grow.appendChild(el('b', x.k.title || x.name));
+        grow.appendChild(el('small', (x.k.kind === 'dashboard' ? 'Dashboard' : 'Report') + ' · sheet ' + x.name + (x.k.month ? ' · ' + x.k.month : '')));
+        var st = stampOf(x.name);
+        if (st.short) { grow.appendChild(document.createTextNode(' ')); grow.appendChild(el('small', '· ' + st.short, st.old ? 'old' : '')); }
+        item.appendChild(grow);
+        item.appendChild(el('span', '›'));
+        item.addEventListener('click', function () {
+          Excel.run(function (context) {
+            context.workbook.worksheets.getItem(x.name).activate();
+            return context.sync();
+          }).then(function () { window.TQNav.go('report'); showCard(); }).catch(function () {});
+        });
+        box.appendChild(item);
+      });
+    }).catch(function () {});
+  }
+
+  // ------------------------------------------------------------ the welcome --
+
+  function welcomed() { try { return localStorage.getItem('tq.welcomed') === '1'; } catch (e) { return true; } }
+  function setWelcomed() { try { localStorage.setItem('tq.welcomed', '1'); } catch (e) { /* private storage */ } }
+
+  function welcome() {
+    var box = $('welcomeChecks');
+    box.textContent = '';
+    var line = function (ok, title, note) {
+      var r = el('div', '', 'check-row');
+      r.appendChild(el('span', ok === true ? '✓' : ok === false ? '!' : '•', 'tick' + (ok === true ? '' : ok === false ? ' bad' : ' todo')));
+      var t = el('div');
+      t.appendChild(el('b', title));
+      if (note) t.appendChild(el('small', note));
+      r.appendChild(t);
+      box.appendChild(r);
+    };
+    window.TQNav.replace('welcome');
+    (window.TQStatus || Promise.resolve({})).then(function (st) {
+      st = st || {};
+      var sign = st.signIn || {};
+      if (st.mode === 'sample') line(null, 'Sample data', 'Not connected to NetSuite yet: Setup (the gear) connects it.');
+      else if (st.error) line(false, 'The connector is not answering', st.error);
+      else if (sign.mode === 'oauth2' && !sign.signedIn) line(false, 'Not signed in to NetSuite', 'Use "Sign in with NetSuite" at the top of the panel.');
+      else if (st.ping) line(true, 'Connected to NetSuite', 'Account ' + st.ping.account);
+      if (st.ping) line(true, 'Signed in as ' + st.ping.user, (st.ping.role || '') + (st.seats && st.seats.used ? ' · seat ' + st.seats.used + ' of ' + st.seats.users : ''));
+      if (st.licence) line(!!st.licence.ok, st.licence.ok ? 'Licensed to ' + st.licence.customer : 'Licence', st.licence.message);
+      line(null, 'Build your first report', 'Pick a format, a month and filters.');
     });
   }
 
   // ----------------------------------------------------------------- the wizard --
 
   var KINDS = [
-    { id: 'monthytd', title: 'Monthly P&L', about: 'The month and the year to date against last year. Rolls forward with one cell.', rolling: true },
-    { id: 'summary', title: 'P&L summary', about: 'One line per group (sales, cost of sales, expenses...), by month or quarter.' },
-    { id: 'management', title: 'P&L, account by account', about: 'Every account with a balance, grouped, with margins.' },
-    { id: 'budget', title: 'Budget against actual', about: 'Actual, budget, variance and variance % per period.', template: 'management', compare: 'budget' },
-    { id: 'balance', title: 'Balance sheet', about: 'As at a month, the same month last year and last year end. Rolls forward.', rolling: true },
-    { id: 'cashflow', title: 'Cash flow', about: 'Indirect method, month by month, checked against the bank accounts.' },
-    { id: 'dash-executive', title: 'Dashboard: executive', about: 'Tiles for sales, gross profit, net income and cash; charts of sales by month, by location and where the money went.', rolling: true, dashboard: 'executive' },
-    { id: 'dash-sales', title: 'Dashboard: sales', about: 'Sales this month and year to date, sales by month against last year, gross margin, sales by location.', rolling: true, dashboard: 'sales' },
-    { id: 'dash-cash', title: 'Dashboard: cash', about: 'Cash, receivables and payables by month, cash movement and the bank accounts.', rolling: true, dashboard: 'cash' },
-    { id: 'dash-pl', title: 'Finance: profit and loss', about: 'Revenue, gross and net margin, operating expenses; revenue, costs and net income by month; a bridge from revenue to net income.', rolling: true, dashboard: 'pl' },
-    { id: 'dash-position', title: 'Finance: financial position', about: 'Working capital, current and quick ratio, debt to equity, debtor and creditor days; what the company owns and owes.', rolling: true, dashboard: 'position' },
-    { id: 'dash-budget', title: 'Finance: budget against actual', about: 'Revenue, costs and net income against the budget, by month and so far this year.', rolling: true, dashboard: 'budget' },
-    { id: 'own', title: 'My own format', about: 'Typed on a sheet: its rows become the report lines.' }
+    { id: 'monthytd', group: 'Reports', title: 'Monthly P&L', about: 'The month and the year to date against last year. Rolls forward with one cell.', rolling: true },
+    { id: 'summary', group: 'Reports', title: 'P&L summary', about: 'One line per group (sales, cost of sales, expenses...), by month or quarter.' },
+    { id: 'management', group: 'Reports', title: 'P&L, account by account', about: 'Every account with a balance, grouped, with margins.' },
+    { id: 'budget', group: 'Reports', title: 'Budget against actual', about: 'Actual, budget, variance and variance % per period.', template: 'management', compare: 'budget' },
+    { id: 'balance', group: 'Reports', title: 'Balance sheet', about: 'As at a month, the same month last year and last year end. Rolls forward.', rolling: true },
+    { id: 'cashflow', group: 'Reports', title: 'Cash flow', about: 'Indirect method, month by month, checked against the bank accounts.' },
+    { id: 'own', group: 'Reports', title: 'My own format', about: 'Typed on a sheet: its rows become the report lines.' },
+    { id: 'dash-executive', group: 'Dashboards', title: 'Dashboard: executive', about: 'Tiles for sales, gross profit, net income and cash; charts of sales by month, by location and where the money went.', rolling: true, dashboard: 'executive' },
+    { id: 'dash-sales', group: 'Dashboards', title: 'Dashboard: sales', about: 'Sales this month and year to date, sales by month against last year, gross margin, sales by location.', rolling: true, dashboard: 'sales' },
+    { id: 'dash-cash', group: 'Dashboards', title: 'Dashboard: cash', about: 'Cash, receivables and payables by month, cash movement and the bank accounts.', rolling: true, dashboard: 'cash' },
+    { id: 'dash-pl', group: 'Dashboards', title: 'Finance: profit and loss', about: 'Revenue, gross and net margin, operating expenses; revenue, costs and net income by month; a bridge from revenue to net income.', rolling: true, dashboard: 'pl' },
+    { id: 'dash-position', group: 'Dashboards', title: 'Finance: financial position', about: 'Working capital, current and quick ratio, debt to equity, debtor and creditor days; what the company owns and owes.', rolling: true, dashboard: 'position' },
+    { id: 'dash-budget', group: 'Dashboards', title: 'Finance: budget against actual', about: 'Revenue, costs and net income against the budget, by month and so far this year.', rolling: true, dashboard: 'budget' }
   ];
   var STEPS = ['What', 'Periods', 'Filters', 'Sheets', 'Check'];
   var w = null;   // the answers so far
 
   function openWizard() {
     w = { step: 0, kind: KINDS[0], filters: {}, dropdowns: [], pages: '', detail: false, comments: false, highlight: '' };
-    $('wizard').hidden = false;
-    $('homeCard').hidden = true;
+    window.TQNav.go('wizard');
     draw();
-    $('wizard').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
-  function closeWizard() {
-    $('wizard').hidden = true;
-    $('homeCard').hidden = false;
-  }
+  function closeWizard() { window.TQNav.back(); }
 
   function field(labelText, control) {
     var box = el('div');
-    var label = el('label', labelText);
-    box.appendChild(label);
+    box.appendChild(el('label', labelText));
     box.appendChild(control);
     return box;
   }
@@ -184,22 +312,25 @@
   function draw() {
     var box = $('wizard');
     box.textContent = '';
-    box.appendChild(el('h3', 'New report'));
-    box.appendChild(el('div', STEPS.map(function (s, n) { return (n === w.step ? '● ' : '○ ') + s; }).join('   '), 'steps'));
+    box.appendChild(el('h3', w.step === 0 ? 'New report' : w.kind.title));
+    var bar = el('div', '', 'steps');
+    STEPS.forEach(function (s, n) { if (!(w.kind.dashboard && n === 3)) bar.appendChild(el('span', '', n <= w.step ? 'on' : '')); });
+    box.appendChild(bar);
+    box.appendChild(el('div', 'Step: ' + STEPS[w.step], 'steps-label'));
     var body = el('div');
     box.appendChild(body);
     [stepWhat, stepPeriods, stepFilters, stepSheets, stepCheck][w.step](body);
-    var row = el('div', '', 'row');
-    row.style.marginTop = '10px';
+    var row = el('div', '', 'row wrap');
+    row.style.marginTop = '14px';
     if (w.step > 0) row.appendChild(button('Back', function () { w.step -= (w.kind.dashboard && w.step === 4) ? 2 : 1; draw(); }));
-    if (w.step < STEPS.length - 1) {
+    if (w.step > 0 && w.step < STEPS.length - 1) {
       row.appendChild(button('Next', function () {
         w.step += 1;
         if (w.kind.dashboard && w.step === 3) w.step = 4;   // a dashboard has no extra sheets to choose
         draw();
-      }, 'primary'));
+      }, 'btn primary'));
     }
-    else row.appendChild(button('Create the report', create, 'primary'));
+    else if (w.step === STEPS.length - 1) row.appendChild(button(w.kind.dashboard ? 'Create the dashboard' : 'Create the report', create, 'btn primary'));
     row.appendChild(button('Cancel', closeWizard));
     box.appendChild(row);
     var msg = el('div', '', 'status-line');
@@ -209,14 +340,17 @@
 
   function stepWhat(body) {
     var list = el('div', '', 'choices');
+    var group = '';
     KINDS.forEach(function (k) {
+      if (k.group !== group) { group = k.group; list.appendChild(el('div', group, 'group-title')); }
       var b = button('', function () {
         w.kind = k;
-        if (k.id === 'own') {   // made from a sheet: the Report layout section does that
-          closeWizard();
+        if (k.id === 'own') {   // made from a sheet: the layout screen does that
           $('dTemplate').value = '(sheet)';
           $('dTemplate').dispatchEvent(new Event('change'));
-          openSection('secLayout');
+          window.TQNav.replace('layout');
+          var fold = document.querySelector('#secLayout details.fold');
+          if (fold) fold.open = true;
           return;
         }
         w.step = 1;
@@ -226,13 +360,14 @@
       b.appendChild(el('small', k.about));
       list.appendChild(b);
     });
+    if (window.TQLibrary) TQLibrary.fillWizard(list);   // layouts the company shared, when there are any
     body.appendChild(list);
   }
 
   function stepPeriods(body) {
     if (w.kind.rolling) {
       var s = select([['', 'Loading…']], '', function (v) { w.month = v; });
-      body.appendChild(field('Report month (change it later in B8 to roll forward)', s));
+      body.appendChild(field('Report month (change it later on the report to roll forward)', s));
       Promise.all([months(), TQ.period('CM', -1).catch(function () { return ''; })]).then(function (r) {
         s.textContent = '';
         r[0].forEach(function (p) { var x = el('option', p.name); x.value = p.name; s.appendChild(x); });
@@ -264,7 +399,7 @@
   }
 
   function stepFilters(body) {
-    body.appendChild(el('div', 'Leave a box on All for everything. You can change these on the report later (B3:B7).', 'hint'));
+    body.appendChild(el('div', 'Leave a box on All for everything. You can change these on the report later.', 'hint'));
     ['subsidiary', 'department', 'class', 'location'].forEach(function (kind) {
       var s = select([['', 'All']], w.filters[kind] || '', function (v) { w.filters[kind] = v; });
       var f = field(kind.charAt(0).toUpperCase() + kind.slice(1), s);
@@ -363,10 +498,10 @@
       if (!data.ok) throw new Error(data.error || 'Request failed');
       if (data.spec) window.TQChat.setSpec(data.spec);
       return window.TQChat.applyActions(data.actions).then(function () {
-        closeWizard();
-        notice = data.reply.split('\n')[0];
+        TQPanel.say(data.reply.split('\n')[0]);
         if (w.kind.dashboard && data.actions && data.actions[0] && window.TQPack) TQPack.placeLogo(data.actions[0].sheetName);
         if (data.design && window.TQDesigner) TQDesigner.select(data.design.name);
+        window.TQNav.replace('report');
         showCard();
       });
     }).catch(function (e) { $('wMessage').textContent = e.message; $('wMessage').className = 'status-line bad'; });
@@ -387,26 +522,44 @@
     };
   }
 
+  function openDashboard(kind) {
+    openWizard();
+    w.kind = KINDS.filter(function (x) { return x.dashboard === kind; })[0];
+    w.step = 1;
+    draw();
+  }
+
   function start() {
     if (!$('homeCard')) return;
     startCharts();
-    showCard();
+    $('homeNew').addEventListener('click', openWizard);
+    $('welcomeStart').addEventListener('click', function () { setWelcomed(); window.TQNav.replace('home'); openWizard(); });
+    $('welcomeSkip').addEventListener('click', function () { setWelcomed(); window.TQNav.replace('home'); showCard(); });
+    $('menuWelcome').addEventListener('click', welcome);
+    $('hMonth').addEventListener('change', function () { setMonth($('hMonth').value); });
+    $('rpPrev').addEventListener('click', function () { stepMonth(-1); });
+    $('rpNext').addEventListener('click', function () { stepMonth(1); });
+    $('rpEdit').addEventListener('click', function () {
+      var open = function () { window.TQNav.go('layout'); };
+      if (reportLayout && window.TQDesigner) TQDesigner.select(reportLayout).then(open, open); else open();
+    });
+    if (inExcel()) loadStamps();
+    if (window.TQ && TQ.onChange) TQ.onChange(function (what) { if (what && what.sheets && what.sheets.length) stampSheets(what.sheets); });
+    if (!welcomed()) welcome(); else showCard();
     if (inExcel()) {
       try {
         Excel.run(function (context) {
-          context.workbook.worksheets.onActivated.add(function () { notice = ''; if ($('wizard').hidden) showCard(); });
+          context.workbook.worksheets.onActivated.add(function () { showCard(); });
+          context.workbook.worksheets.onAdded.add(function () { listReports(); });
+          context.workbook.worksheets.onDeleted.add(function () { listReports(); });
           return context.sync();
         }).catch(function () {});
-      } catch (e) { /* an Excel without sheet events: the card updates when the panel opens */ }
+      } catch (e) { /* an Excel without sheet events: the screens update when the panel opens */ }
     }
     if (window.Office && Office.actions && Office.actions.associate) {
       Office.actions.associate('newReport', viaPanel(openWizard));
-      Office.actions.associate('newDashboard', viaPanel(function () {
-        openWizard();
-        w.kind = KINDS.filter(function (x) { return x.dashboard === 'executive'; })[0];
-        w.step = 0;
-        draw();
-      }));
+      Office.actions.associate('showPanel', viaPanel(function () {}));
+      Office.actions.associate('newDashboard', viaPanel(function () { window.TQNav.go('dash'); }));
       Office.actions.associate('openChat', viaPanel(function () { TQChat.showTab('Chat'); }));
       Office.actions.associate('refreshAll', direct(function () { TQPanel.refreshAll(); }));
       Office.actions.associate('refreshSheet', direct(function () { TQPanel.refreshSheet(); }));
@@ -448,16 +601,11 @@
     $('cChart').addEventListener('click', chartSelection);
     ['executive', 'sales', 'cash', 'pl', 'position', 'budget'].forEach(function (k) {
       var b = $('dash-' + k);
-      if (b) b.addEventListener('click', function () {
-        openWizard();
-        w.kind = KINDS.filter(function (x) { return x.dashboard === k; })[0];
-        w.step = 1;
-        draw();
-      });
+      if (b) b.addEventListener('click', function () { openDashboard(k); });
     });
   }
 
-  window.TQHome = { openWizard: openWizard, showCard: showCard };
+  window.TQHome = { openWizard: openWizard, showCard: showCard, welcome: welcome };
 
   if (window.Office && Office.onReady) Office.onReady(function () { start(); });
   else if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);

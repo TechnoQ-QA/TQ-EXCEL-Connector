@@ -591,6 +591,39 @@ Known gaps:
 - The chat is a command reader, not an AI: it cannot read a screenshot.
 - The sandbox returns no subsidiaries, so the entity dropdown has not been seen working.
 
+### The panel (version 1.2 and 1.3)
+
+The panel is a set of screens instead of one long page. **Home** has New report, six tiles (Refresh all,
+Dashboard, Send / PDF, Upload, Formulas, Data table) and the reports in the workbook. **This report** opens by
+itself on a TQ report or dashboard sheet: the month with ‹ ›, the filters as chips, when its numbers were last
+pulled from NetSuite, and the way to its layout. Every other part (layout, filters, dashboards, send, upload,
+formulas, data tables, drill down, chat) is a screen of its own with Back. Dark mode follows Excel's theme. The
+setup page has sections (Overview, Connection, Licence, Logo, Seats, Updates, AI add-on).
+
+- **Right-click menu:** right-click any cell for TQ Connector > Drill down, Refresh selection, Refresh sheet
+  or Insert formula.
+- **Keyboard shortcuts** (shortcuts.json): Ctrl+Alt+Shift+D drill down, +R refresh sheet, +A refresh all, +S
+  refresh selection, +N new report, +T show the panel. Listed in the panel's menu.
+- **Refresh progress:** "Refreshing: 340 of 1,284 numbers…", then how many, how long and how many failed, with
+  Show the first (selects the cell and says why) and Next.
+- **Refreshed at:** each report shows when its numbers last came from NetSuite, in amber when not today. Kept
+  in the workbook's settings, not in a cell.
+- **Open large:** drill down in a big window with every column, sorting, search, a total, links to NetSuite
+  and Send to a new sheet (drill.html, an Office dialog).
+- **Company library** (tq_excel_core.js version 7): on the Layout screen, Save to the library shares a layout
+  with everyone in the company (stored in tq_library.json next to the script); it then appears in New report
+  under Company library, and Use adds it to the workbook and builds its report. The person who saved it, or an
+  administrator, can replace or remove it.
+- **Demo pack:** the menu's Build a demo pack makes a monthly P&L, a balance sheet and an executive dashboard
+  for the last closed month.
+- Messages at the bottom fade after a few seconds; errors stay until dismissed. Opening a screen moves the
+  keyboard focus to its heading.
+
+Checked in a browser at panel width against sample data: every screen, the library (save, list, wizard,
+remove), drill down and the large window (accounts, transactions, sort, search, back), refresh counting with an
+error, the stamps. **Not yet tried inside Excel:** the right-click menu, the shortcuts, the dialog window, the
+report screen following the open sheet.
+
 ## 4. Data queries (any NetSuite data)
 
 The **Data tables** section of the Reports tab brings tables of NetSuite data into the workbook, not only ledger balances:

@@ -467,14 +467,10 @@
       });
   }
 
-  /* Two tabs: Reports (filters, layout, data tables, lists) and Chat. */
+  /* The chat is a screen of its own (the speech-bubble button in the header); 'Reports' goes back Home. */
   function showTab(name) {
-    ['Reports', 'Chat'].forEach(function (tab) {
-      var on = tab === name;
-      $('tab' + tab).setAttribute('aria-selected', on ? 'true' : 'false');
-      $(tab.toLowerCase() + 'Tab').hidden = !on;
-    });
-    if (name === 'Reports') loadReports();
+    if (name === 'Chat') { window.TQNav.go('chat'); setTimeout(function () { $('chatInput').focus(); }, 0); }
+    else { window.TQNav.go('home'); loadReports(); }
   }
 
   function loadReports() {
@@ -484,8 +480,7 @@
   }
 
   function start() {
-    $('tabChat').addEventListener('click', function () { showTab('Chat'); });
-    $('tabReports').addEventListener('click', function () { showTab('Reports'); });
+    if ($('menuHelp')) $('menuHelp').addEventListener('click', function () { showTab('Chat'); send('help'); });
     [['secLayout', 'TQDesigner'], ['secFilters', 'TQFilters'], ['secData', 'TQData']].forEach(function (pair) {
       $(pair[0]).addEventListener('toggle', function () {
         if ($(pair[0]).open && window[pair[1]]) window[pair[1]].load();

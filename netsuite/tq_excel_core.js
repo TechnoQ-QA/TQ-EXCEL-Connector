@@ -44,7 +44,7 @@ define(['N/query', 'N/runtime', 'N/search', 'N/record', 'N/file', 'N/config'], (
     class: { table: 'classification', feature: 'CLASSES', column: 'tl.class' },
     location: { table: 'location', feature: 'LOCATIONS', column: 'tl.location' }
   };
-  const VERSION = 6;   // 3 budgets; 4 statistical accounts, Book/Currency, journals, seats; 5 branding; 6 seats per user
+  const VERSION = 7;   // 3 budgets; 4 statistical accounts, Book/Currency, journals, seats; 5 branding; 6 seats per user; 7 report library
   const MAX_BATCH = 2000;
   const EXTRA_FIELDS = {
     name: { column: 'COALESCE(tl.entity, t.entity)', label: 'Name' },
@@ -871,6 +871,78 @@ define(['N/query', 'N/runtime', 'N/search', 'N/record', 'N/file', 'N/config'], (
     return seatList(user);
   };
 
+  // ------------------------------------------------------------ report library --
+  // Report layouts shared by everyone in the company (version 7): one small file next to this script. Anyone may
+  // add a layout; the person who added it, or an administrator, may replace or remove it.
+  const LIBRARY_FILE = 'tq_library.json';
+  const LIBRARY_MAX = 200000;   // characters per layout
+
+  const libraryFile = () => {
+    const home = rows("SELECT id, folder FROM file WHERE name = 'tq_excel_core.js'")[0];
+    if (!home) throw new Error('Cannot find tq_excel_core.js in the File Cabinet');
+    const found = rows('SELECT id FROM file WHERE name = ? AND folder = ?', [LIBRARY_FILE, Number(home.folder)])[0];
+    let data = { items: {} };
+    if (found) {
+      try {
+        data = JSON.parse(file.load({ id: Number(found.id) }).getContents()) || data;
+      } catch (e) {
+        data = { items: {} };
+      }
+    }
+    data.items = data.items || {};
+    return { folder: Number(home.folder), data };
+  };
+
+  const saveLibrary = (folder, data) => {
+    file.create({ name: LIBRARY_FILE, fileType: file.Type.JSON, contents: JSON.stringify(data), folder }).save();
+  };
+
+  const libraryRows = (data, user) => Object.keys(data.items).map((id) => {
+    const it = data.items[id];
+    return { id, name: it.name, description: it.description || '', by: it.by, at: it.at, mine: Number(it.byId) === Number(user.id) };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+
+  const libraryList = (user) => {
+    const { data } = libraryFile();
+    return { items: libraryRows(data, user), canManage: isAdministrator(user) };
+  };
+
+  const librarySave = (user, request) => {
+    const name = clean(request.name).slice(0, 60);
+    if (!name) throw new Error('Give the layout a name');
+    const design = JSON.stringify(request.design || null);
+    if (!request.design || typeof request.design !== 'object') throw new Error('No layout to save');
+    if (design.length > LIBRARY_MAX) throw new Error('This layout is too large for the library');
+    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'layout';
+    const { folder, data } = libraryFile();
+    const before = data.items[id];
+    if (before && Number(before.byId) !== Number(user.id) && !isAdministrator(user)) {
+      throw new Error('"' + before.name + '" was added by ' + before.by + '. Use another name, or ask an administrator.');
+    }
+    data.items[id] = { name, description: clean(request.description).slice(0, 200), design: request.design,
+      by: clean(user.name).slice(0, 60), byId: Number(user.id), at: new Date().toISOString().slice(0, 10) };
+    saveLibrary(folder, data);
+    return Object.assign({ saved: id, replaced: !!before }, libraryList(user));
+  };
+
+  const libraryLoad = (user, request) => {
+    const { data } = libraryFile();
+    const it = data.items[clean(request.id)];
+    if (!it) throw new Error('That layout is no longer in the library');
+    return { item: { id: clean(request.id), name: it.name, description: it.description || '', by: it.by, at: it.at, design: it.design } };
+  };
+
+  const libraryDelete = (user, request) => {
+    const { folder, data } = libraryFile();
+    const id = clean(request.id);
+    const it = data.items[id];
+    if (!it) throw new Error('That layout is no longer in the library');
+    if (Number(it.byId) !== Number(user.id) && !isAdministrator(user)) throw new Error('Only ' + it.by + ' or an administrator can remove it');
+    delete data.items[id];
+    saveLibrary(folder, data);
+    return libraryList(user);
+  };
+
   // ----------------------------------------------------------------- journals --
   // Journal upload (version 4): rows of the Excel sheet with the same Entry number become one journal entry.
   const JOURNAL_PERMISSIONS = ['TRAN_JOURNAL'];
@@ -1032,6 +1104,14 @@ define(['N/query', 'N/runtime', 'N/search', 'N/record', 'N/file', 'N/config'], (
           return Object.assign({ ok: true }, seatRelease(user, request));
         case 'branding':
           return Object.assign({ ok: true }, branding(ctx, request));
+        case 'libraryList':
+          return Object.assign({ ok: true }, libraryList(user));
+        case 'librarySave':
+          return Object.assign({ ok: true }, librarySave(user, request));
+        case 'libraryLoad':
+          return Object.assign({ ok: true }, libraryLoad(user, request));
+        case 'libraryDelete':
+          return Object.assign({ ok: true }, libraryDelete(user, request));
         case 'filterFields':
           return {
             ok: true,

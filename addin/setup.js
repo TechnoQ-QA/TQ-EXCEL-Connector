@@ -1,7 +1,13 @@
-/* TQ Excel Connector - setup page: NetSuite connection, licence and AI add-on. Secrets are sent to the
- * local server only, which writes them to its own config file; they are never read back. */
+/* TQ Excel Connector - setup page: overview, NetSuite connection, licence, logo, seats, updates and the AI add-on,
+ * one section at a time. Secrets are sent to the local server only, which writes them to its own config file;
+ * they are never read back. */
 (function () {
   'use strict';
+
+  try {   // the panel's theme (it knows Excel's); outside Excel the page follows Windows
+    var theme = localStorage.getItem('tq.theme');
+    if (theme) document.documentElement.setAttribute('data-theme', theme);
+  } catch (e) { /* private storage */ }
 
   var $ = function (id) { return document.getElementById(id); };
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September',
@@ -19,8 +25,47 @@
     else box('licenceState', licence.message, licence.ok ? 'ok' : 'bad');
   }
 
+  /* One section at a time; Save shows where there is something to save. */
+  var SAVED = ['connection', 'licence', 'updates', 'ai'];
+  function section(name) {
+    Array.prototype.forEach.call(document.querySelectorAll('main section[data-section]'), function (s) {
+      s.hidden = s.getAttribute('data-section') !== name;
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('#snav button'), function (b) {
+      b.classList.toggle('on', b.getAttribute('data-section') === name);
+    });
+    var on = document.querySelector('#snav button.on');
+    if (on) on.parentNode.scrollLeft = Math.max(0, on.offsetLeft - 40);   // the pills row, when the page is narrow
+    $('savebar').hidden = SAVED.indexOf(name) === -1;
+    if (name === 'seats') $('seatRefresh').click();
+    window.scrollTo(0, 0);
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('#snav button'), function (b) {
+    b.addEventListener('click', function () { section(b.getAttribute('data-section')); });
+  });
+
+  function stats(data) {
+    var on = data.mode === 'netsuite';
+    var s = data.signIn || {};
+    $('statDot').className = 'dot ' + (on ? 'ok' : '');
+    $('statNetsuite').textContent = on ? 'Connected' : 'Not connected';
+    $('statAccount').textContent = on ? data.accountId : 'sample data';
+    $('statUser').textContent = s.signedIn ? (s.user || 'Yes') : s.mode === 'oauth2' ? 'Not signed in' : (on ? 'Token' : '—');
+    $('statRole').textContent = s.signedIn ? (s.role || '') : '';
+    var l = data.licence;
+    $('statLicence').textContent = l ? (l.ok ? (l.users ? l.users + ' users' : 'Valid') : 'Not valid') : 'None';
+    $('statLicenceNote').textContent = l && l.ok && l.expires ? 'until ' + l.expires : l && !l.ok ? 'see Licence' : '';
+    $('statVersion').textContent = data.version || '';
+    $('statUpdate').textContent = data.updateUrl ? 'updates on' : 'updates by hand';
+    $('navConnection').textContent = on ? '✓' : '';
+    $('navLicence').textContent = l ? (l.ok ? '✓' : '!') : '';
+    $('navLicence').className = l && !l.ok ? 'bad' : '';
+  }
+
   function load() {
     fetch('/api/setup').then(function (r) { return r.json(); }).then(function (data) {
+      stats(data);
+      $('advanced').open = !data.restletUrl || !data.clientId;
       ['accountId', 'restletUrl', 'consumerKey', 'tokenId'].forEach(function (k) { $(k).value = data[k] || ''; });
       $('fiscal').value = String(data.fiscalYearStartMonth || 1);
       $('clientId').value = data.clientId || '';
@@ -94,8 +139,8 @@
     reader.readAsDataURL(file);
   });
   $('logoRemove').addEventListener('click', function () { sendLogo({ op: 'remove' }); });
-  $('logoPreview').addEventListener('error', function () { $('logoPreview').hidden = true; });
-  $('logoPreview').addEventListener('load', function () { $('logoPreview').hidden = false; });
+  $('logoPreview').addEventListener('error', function () { $('logoPreview').hidden = true; $('logoNone').hidden = false; });
+  $('logoPreview').addEventListener('load', function () { $('logoPreview').hidden = false; $('logoNone').hidden = true; });
 
   /* Seats: who uses the licence, with Release (your own seat, or anyone's for an administrator). */
   function seatCall(body) {
@@ -108,10 +153,11 @@
     box.className = 'box';
     box.textContent = '';
     if (!data.ok) { box.textContent = data.error || 'Could not read the seats.'; box.className = 'box bad'; return; }
+    $('navSeats').textContent = data.seats.length ? String(data.seats.length) : '';
     if (!data.seats.length) { box.textContent = 'No seat is in use.'; return; }
     var table = document.createElement('table');
-    table.style.width = '100%';
-    table.innerHTML = '<tr><th align="left">Who</th><th align="left">PC</th><th align="left">Last used</th><th></th></tr>';
+    box.className = '';
+    table.innerHTML = '<tr><th>Who</th><th>PC</th><th>Last used</th><th></th></tr>';
     data.seats.forEach(function (seat) {
       var tr = document.createElement('tr');
       [seat.user + (seat.mine ? ' (you)' : ''), seat.label, seat.last].forEach(function (text) {
@@ -122,6 +168,7 @@
       var td = document.createElement('td');
       if (seat.mine || data.canRelease) {
         var b = document.createElement('button');
+        b.className = 'btn';
         b.textContent = 'Release';
         b.addEventListener('click', function () {
           box.textContent = 'Releasing…';
@@ -167,4 +214,6 @@
       .catch(function (e) { box('updateState', e.message, 'bad'); });
   });
   load();
+  var start = (location.hash || '').replace('#', '');
+  if (start && document.querySelector('main section[data-section="' + start + '"]')) section(start);
 })();

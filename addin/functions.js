@@ -24,6 +24,13 @@
   var timer = null;
   var accountsPromise = null;
 
+  /* What the panel shows while numbers come in: how many were asked for, answered and failed (with their
+   * cells), and which sheets just got fresh numbers (for each report's "refreshed at" line). */
+  var stats = { asked: 0, done: 0, failed: [], inFlight: 0, started: 0 };
+  var listeners = [];
+  function changed(what) { listeners.forEach(function (fn) { try { fn(what, stats); } catch (e) { /* a closed panel */ } }); }
+  function sheetOf(address) { var a = normalizeAddress(address); var i = a.lastIndexOf('!'); return i > 0 ? a.slice(0, i) : ''; }
+
   function text(value) {
     return value === null || value === undefined ? '' : String(value).trim();
   }
@@ -69,6 +76,14 @@
 
   function sendBatch(entries) {
     var requests = entries.map(function (entry) { return entry[1].request; });
+    stats.inFlight += 1;
+    changed('sent');
+    var sheets = {};
+    var settle = function (w, ok, message) {
+      stats.done += 1;
+      if (ok) { if (w.sheet) sheets[w.sheet] = true; }
+      else if (stats.failed.length < 500) stats.failed.push({ address: w.address || '', message: message });
+    };
     callApi({ action: 'balances', requests: requests }).then(
       function (data) {
         entries.forEach(function (entry, i) {
@@ -76,18 +91,22 @@
           var waiters = entry[1].waiters;
           if (typeof result.value === 'number') {
             cache.set(entry[0], result.value);
-            waiters.forEach(function (w) { w.resolve(result.value); });
+            waiters.forEach(function (w) { settle(w, true); w.resolve(result.value); });
           } else {
-            waiters.forEach(function (w) { w.reject(fail(result.error || 'No value')); });
+            waiters.forEach(function (w) { settle(w, false, result.error || 'No value'); w.reject(fail(result.error || 'No value')); });
           }
         });
       },
       function (error) {
         entries.forEach(function (entry) {
-          entry[1].waiters.forEach(function (w) { w.reject(fail(error.message)); });
+          entry[1].waiters.forEach(function (w) { settle(w, false, error.message); w.reject(fail(error.message)); });
         });
       }
-    );
+    ).then(function () {
+      stats.inFlight -= 1;
+      if (!stats.inFlight) stats.finished = Date.now();
+      changed({ sheets: Object.keys(sheets) });
+    });
   }
 
   /* An optional argument that points at an empty cell can arrive as 0; treat it as not given. */
@@ -115,9 +134,12 @@
     var key = JSON.stringify(request);
     if (cache.has(key)) return Promise.resolve(cache.get(key));
 
+    stats.asked += 1;
+    if (!stats.started) stats.started = Date.now();
+    var address = invocation && invocation.address ? invocation.address : '';
     return new Promise(function (resolve, reject) {
       if (!pending.has(key)) pending.set(key, { request: request, waiters: [] });
-      pending.get(key).waiters.push({ resolve: resolve, reject: reject });
+      pending.get(key).waiters.push({ resolve: resolve, reject: reject, address: address, sheet: address ? sheetOf(address) : '' });
       if (timer === null) timer = setTimeout(flush, BATCH_DELAY_MS);
     });
   }
@@ -199,6 +221,10 @@
   }
 
   window.TQ = {
+    /* Refresh progress: stats() now, resetStats() before a refresh, onChange(fn) for every batch sent or back. */
+    stats: function () { return { asked: stats.asked, done: stats.done, failed: stats.failed.slice(), busy: stats.inFlight > 0 || pending.size > 0 || timer !== null, started: stats.started, finished: stats.finished }; },
+    resetStats: function () { stats.asked = 0; stats.done = 0; stats.failed = []; stats.started = 0; stats.finished = 0; },
+    onChange: function (fn) { listeners.push(fn); },
     balance: balance,
     accountName: accountName,
     period: period,
