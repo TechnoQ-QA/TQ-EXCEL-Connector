@@ -9,7 +9,7 @@ The signature covers the other fields, so a licence cannot be edited or moved to
 account. Techno Q makes licences with scripts/make_licence.py and the private key it keeps; the
 connector only holds the public key (licence_key.py). Sample data never needs a licence.
 
-"users" is shown, not enforced: each PC runs its own connector, so nothing counts the PCs.
+"users" is enforced by seats (updates.Seats and tq_seats.json in NetSuite): per NetSuite user with sign-in, per PC with tokens.
 """
 
 import base64

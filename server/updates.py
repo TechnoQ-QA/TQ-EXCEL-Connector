@@ -210,7 +210,7 @@ def install(update_url, current, run=True):
     with open(path, "wb") as f:
         f.write(data)
     if run and sys.platform == "win32":
-        subprocess.Popen([path], close_fds=True,
+        subprocess.Popen([path, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"], close_fds=True,   # the setup keeps the settings
                          creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) |
                          getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
     return {"ok": True, "started": bool(run), "path": path,
