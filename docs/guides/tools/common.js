@@ -4,7 +4,7 @@ const path = require('path');
 const d = require('docx');
 const {
   Paragraph, TextRun, HeadingLevel, AlignmentType, Table, TableRow, TableCell, WidthType, ShadingType,
-  BorderStyle, ImageRun, LevelFormat, Header, Footer, PageNumber, TableOfContents, PageBreak, TabStopType,
+  BorderStyle, ImageRun, LevelFormat, TableLayoutType, Header, Footer, PageNumber, TableOfContents, PageBreak, TabStopType,
 } = d;
 
 const ORANGE = 'C2571A';
@@ -67,6 +67,7 @@ function table(rows, widths, opts = {}) {
   return new Table({
     width: { size: total, type: WidthType.DXA },
     columnWidths: widths,
+    layout: TableLayoutType.FIXED,   // long words (script IDs, paths) wrap instead of pushing the table off the page
     borders: { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border },
     rows: rows.map((r, i) => new TableRow({
       tableHeader: i === 0 && opts.header !== false,
