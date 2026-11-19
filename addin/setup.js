@@ -65,6 +65,11 @@
   function load() {
     fetch('/api/setup').then(function (r) { return r.json(); }).then(function (data) {
       stats(data);
+      if (data.certExpires) {
+        var soon = data.certDaysLeft !== null && data.certDaysLeft <= 60;
+        box('certState', 'This PC’s certificate for https://localhost is valid until ' + data.certExpires +
+          (soon ? '. It is renewed the next time the connector starts (Windows asks you to confirm).' : '. It renews itself 60 days before that.'), soon ? 'bad' : '');
+      }
       $('advanced').open = !data.restletUrl || !data.clientId;
       ['accountId', 'restletUrl', 'consumerKey', 'tokenId'].forEach(function (k) { $(k).value = data[k] || ''; });
       $('fiscal').value = String(data.fiscalYearStartMonth || 1);
@@ -212,6 +217,13 @@
       .then(function (r) { return r.json(); })
       .then(function (data) { box('updateState', data.ok ? data.message : data.error, data.ok ? 'ok' : 'bad'); })
       .catch(function (e) { box('updateState', e.message, 'bad'); });
+  });
+  $('diagSave').addEventListener('click', function () {
+    box('diagState', 'Saving…');
+    fetch('/api/diagnostics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { box('diagState', d.ok ? 'Saved: ' + d.path + '. Email this file to Techno Q support.' : d.error, d.ok ? 'ok' : 'bad'); })
+      .catch(function (e) { box('diagState', e.message, 'bad'); });
   });
   load();
   var start = (location.hash || '').replace('#', '');

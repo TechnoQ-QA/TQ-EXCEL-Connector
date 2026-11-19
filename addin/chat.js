@@ -242,8 +242,77 @@
         return 'Would write ' + a.rows.length + ' row(s) to ' + where + ' (open the panel in Excel).';
       }));
     }
-    return keepComments(writes).then(function () { return cleanTargets(writes); })
+    return backupSheets(writes).then(function () { return keepComments(writes); }).then(function () { return cleanTargets(writes); })
       .then(function () { return makeSheets(writes); }).then(function () { return writeAll(writes); });
+  }
+
+  /* Rebuilding a report rewrites its sheet, and Excel cannot undo that. So first each report sheet that is about
+   * to be rewritten is copied to a hidden sheet ("TQ Backup ..."), one per report, replacing the older copy. The
+   * This report screen offers Restore previous version, which puts the copy's cells back in place (the sheet
+   * itself stays, so formulas on other sheets that point at it keep working). The list is in the workbook's
+   * settings: tqBackups = { sheet name: { backup, at } }. */
+  var BACKUP_MAX = 12;   // sheets copied per rebuild (a pack with many location sheets keeps the first ones)
+  function backups() {
+    try { return Office.context.document.settings.get('tqBackups') || {}; } catch (e) { return {}; }
+  }
+  function saveBackups(map) {
+    try {
+      Office.context.document.settings.set('tqBackups', map);
+      Office.context.document.settings.saveAsync(function () {});
+    } catch (e) { /* outside Excel */ }
+  }
+  function backupSheets(writes) {
+    if (!supports('1.7')) return Promise.resolve();
+    var targets = writes.filter(function (a) { return a.target === 'sheet' && !/^tq (layout|backup|queries)/i.test(a.sheetName); });
+    if (!targets.length) return Promise.resolve();
+    var map = backups();
+    return Excel.run(function (context) {
+      var sheets = context.workbook.worksheets;
+      sheets.load('items/name');
+      return context.sync().then(function () {
+        var names = sheets.items.map(function (s) { return s.name; });
+        var lower = names.map(function (n) { return n.toLowerCase(); });
+        var made = [];
+        targets.slice(0, BACKUP_MAX).forEach(function (a, n) {
+          var at = lower.indexOf(a.sheetName.toLowerCase());
+          if (at === -1) return;   // a new sheet: nothing to keep
+          var old = map[names[at]];
+          if (old && lower.indexOf(String(old.backup).toLowerCase()) !== -1) sheets.getItem(old.backup).delete();
+          var copy = sheets.getItem(names[at]).copy('End');
+          var name = ('TQ Backup ' + Date.now().toString(36) + n).slice(0, 31);
+          copy.name = name;
+          copy.visibility = 'Hidden';
+          made.push([names[at], name]);
+        });
+        return context.sync().then(function () {
+          made.forEach(function (m) { map[m[0]] = { backup: m[1], at: Date.now() }; });
+          if (made.length) saveBackups(map);
+        });
+      });
+    }).catch(function () { /* a backup that cannot be made never stops the rebuild */ });
+  }
+
+  /* Puts the hidden copy's cells back on the sheet. Returns a promise of a sentence for the panel. */
+  function restoreSheet(name) {
+    var map = backups();
+    var found = map[name] || map[Object.keys(map).filter(function (k) { return k.toLowerCase() === String(name).toLowerCase(); })[0]];
+    if (!found) return Promise.reject(new Error('There is no earlier version of this sheet.'));
+    return Excel.run(function (context) {
+      var sheet = context.workbook.worksheets.getItem(name);
+      var copy = context.workbook.worksheets.getItem(found.backup);
+      var used = copy.getUsedRange(true);
+      used.load('address');
+      return context.sync().then(function () {
+        sheet.getRange().clear();
+        try { sheet.getRange().conditionalFormats.clearAll(); } catch (e) { /* older Excel */ }
+        sheet.getRange(used.address.split('!').pop()).copyFrom(used, 'All');
+        return context.sync();
+      });
+    }).then(function () {
+      var when = new Date(found.at);
+      return 'Restored the version from ' + when.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' +
+        when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '. Refresh to bring its numbers up to date.';
+    });
   }
 
   /* A report with a Comments column: what was typed there is read before the sheet is rewritten and put back
@@ -523,6 +592,11 @@
   }
 
   window.TQChat = {
+    hasBackup: function (name) {
+      var map = backups();
+      return Object.keys(map).some(function (k) { return k.toLowerCase() === String(name || '').toLowerCase(); });
+    },
+    restoreSheet: restoreSheet,
     showTab: showTab,
     send: send,
     applyActions: applyActions,

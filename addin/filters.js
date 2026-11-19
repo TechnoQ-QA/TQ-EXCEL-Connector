@@ -343,7 +343,8 @@
     $('fRead').addEventListener('click', showCurrent);
   }
 
-  window.TQFilters = { load: load, excel: false, stand: null, splitOther: splitOther, merged: merged };
+  window.TQFilters = { load: load, excel: false, stand: null, splitOther: splitOther, merged: merged,
+    read: readCells, write: function (cells) { return writeCells(cells).then(showCurrent); } };
 
   if (typeof Office !== 'undefined' && Office.onReady) {
     Office.onReady(function (info) { window.TQFilters.excel = !!(info && info.host); });

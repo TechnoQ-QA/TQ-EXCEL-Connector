@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>TQ Connector</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-  <link rel="stylesheet" href="panel.css?v=121" />
+  <link rel="stylesheet" href="panel.css?v=130" />
 </head>
 <body>
   <!-- the header: logo, connection, chat and settings -->
@@ -16,6 +16,9 @@
       <b>TQ Connector</b>
       <span class="status"><i id="dot" class="dot"></i><span id="status">Connecting…</span></span>
     </div>
+    <button class="icon-btn" id="helpButton" title="Help for this screen" aria-label="Help for this screen" aria-expanded="false">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.5 2.5 0 1 1 3.6 2.3c-.8.4-1.2 1-1.2 1.8v.4M12 17h.01"/></svg>
+    </button>
     <button class="icon-btn" id="openChat" title="Chat: ask for a report in words" aria-label="Chat">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>
     </button>
@@ -27,12 +30,14 @@
       <button id="menuSignOut" hidden>Sign out of NetSuite</button>
       <button data-go="formulas">Formulas and lists</button>
       <button id="menuHelp">What the chat understands</button>
+      <button data-go="transfer">Move to another PC (export / import)</button>
       <button id="menuDemo">Build a demo pack (3 sheets)</button>
       <button data-go="keys">Keyboard shortcuts</button>
       <button id="menuWelcome">Show the welcome again</button>
     </div>
   </header>
 
+  <div id="tipBox" class="tipbox" hidden></div>
   <main class="screens">
     <!-- ============================================================ first run -->
     <section class="screen" data-screen="welcome" hidden>
@@ -46,6 +51,10 @@
     <!-- ============================================================ home -->
     <section class="screen" data-screen="home">
       <div id="banners"></div>
+      <div class="qs">
+        <input type="search" class="field" id="qsInput" placeholder="Search: a report, an action or a sheet…" aria-label="Search reports, actions and sheets" autocomplete="off" />
+        <div id="qsList" class="qs-list" role="listbox" hidden></div>
+      </div>
       <div id="homeCard" class="context" hidden></div>
       <div class="hero">
         <b>New report</b>
@@ -94,6 +103,7 @@
       <h2 id="rpTitle">Report</h2>
       <p class="sub" id="rpAbout"></p>
       <div id="rpStamp" class="stamp" hidden></div>
+      <div><button class="btn link" id="rpTour">Show me around this sheet</button></div>
       <div id="rpMonthBox" class="field" hidden>
         <span>Month (every column rolls with it)</span>
         <div class="period">
@@ -108,10 +118,22 @@
           <div id="fCurrent" class="items chips"></div>
           <button class="chip add" data-go="filter">+ Add filter</button>
         </div>
+        <div class="row wrap sets">
+          <select class="field" id="fsPick" aria-label="Saved filter sets"><option value="">Saved filter sets…</option></select>
+          <button class="btn" id="fsApply" title="Put this set's filters on the report">Apply</button>
+          <button class="btn link" id="fsSaveOpen">Save these filters</button>
+        </div>
+        <div class="row" id="fsSaveRow" hidden>
+          <input type="text" class="field" id="fsName" placeholder="Name, e.g. Riyadh hotels" aria-label="Filter set name" />
+          <button class="btn primary" id="fsSave">Save</button>
+        </div>
         <div id="fMessage" class="status-line" aria-live="polite"></div>
       </div>
       <div class="label">Layout and options</div>
       <div class="opt" id="rpLayoutRow"><div><b>Lines, columns and options</b><small>Sheets per location, highlights, comments</small></div><button class="btn link" id="rpEdit">Edit</button></div>
+      <div class="opt"><div><b>Comments</b><small>Collect every comment, and the big changes still without one, onto one sheet</small></div>
+        <div class="row"><select class="field mini" id="rpCollectAt" aria-label="Changes from"><option value="5">5%</option><option value="10" selected>10%</option><option value="20">20%</option></select><button class="btn link" id="rpCollect">Collect</button></div></div>
+      <div class="opt" id="rpRestoreRow" hidden><div><b>Previous version</b><small>Put back this sheet as it was before the last rebuild</small></div><button class="btn link" id="rpRestore">Restore</button></div>
       <div class="opt"><div><b>Send</b><small>Copy as values or set up a PDF with your logo</small></div><button class="btn link" data-go="send">Open</button></div>
       <div class="opt"><div><b>Dashboard</b><small>Charts for this report's month and filters</small></div><button class="btn link" data-go="dash">Open</button></div>
     </section>
@@ -186,6 +208,11 @@
         </select>
         <label class="check"><input type="checkbox" id="dDetail" /> List the GL accounts under each line</label>
         <label class="check"><input type="checkbox" id="dComments" /> Comments column (kept when the report is rebuilt)</label>
+        <label for="dCommentAt">Ask for a comment when a change is at least (up or down)</label>
+        <select class="field" id="dCommentAt">
+          <option value="">Don't ask</option><option value="5">5%</option><option value="10">10%</option>
+          <option value="15">15%</option><option value="20">20%</option><option value="25">25%</option>
+        </select>
         <label for="dHighlight">Highlight change % over (green above, red below minus)</label>
         <select class="field" id="dHighlight">
           <option value="">No highlights</option><option value="5">5%</option><option value="10">10%</option>
@@ -533,6 +560,34 @@
       </div>
     </section>
 
+    <!-- ============================================================ move to another PC -->
+    <section class="screen" data-screen="transfer" hidden>
+      <button class="back" data-back>&lsaquo; Back</button>
+      <h2>Move to another PC</h2>
+      <p class="sub">Take your setup to a new computer: the NetSuite connection (never a password or key), the licence,
+        the logo, your saved filter sets and this workbook's report layouts, in one file.</p>
+      <div class="block">
+        <h3>Export from this PC</h3>
+        <input type="text" class="field" id="xName" placeholder="A name for the file, e.g. Hotel A" aria-label="Export name" />
+        <label class="check"><input type="checkbox" id="xLayouts" checked /> This workbook's report layouts</label>
+        <label class="check"><input type="checkbox" id="xQueries" checked /> This workbook's data tables (TQ Queries)</label>
+        <div style="margin-top:10px"><button class="btn primary" id="xExport">Export</button></div>
+        <div id="xMessage" class="status-line" aria-live="polite"></div>
+      </div>
+      <div class="block">
+        <h3>Import on this PC</h3>
+        <p class="hint">Choose the file exported on the other PC. Nothing changes until you press Import.</p>
+        <label class="btn" style="margin:0;display:inline-block;color:var(--text);font-size:13px">Choose the file… <input type="file" id="iFile" accept=".json,application/json" hidden /></label>
+        <div id="iChoices" hidden>
+          <div id="iList"></div>
+          <div style="margin-top:10px"><button class="btn primary" id="iImport">Import</button></div>
+        </div>
+        <div id="iMessage" class="status-line" aria-live="polite"></div>
+      </div>
+      <p class="hint">The workbook itself also carries its layouts: saving it and opening it on the other PC works too.
+        The export adds the connection, licence, logo and filter sets, and rebuilds the layouts in any workbook.</p>
+    </section>
+
     <!-- ============================================================ keyboard shortcuts -->
     <section class="screen" data-screen="keys" hidden>
       <button class="back" data-back>&lsaquo; Back</button>
@@ -582,17 +637,18 @@
   <!-- results of refresh, drill and lists: seen from every screen -->
   <footer id="message" class="toast" aria-live="polite"></footer>
 
-  <script src="nav.js?v=121"></script>
+  <script src="nav.js?v=130"></script>
   <script src="functions.js"></script>
-  <script src="taskpane.js?v=121"></script>
-  <script src="chat.js?v=121"></script>
+  <script src="taskpane.js?v=130"></script>
+  <script src="chat.js?v=130"></script>
   <script src="designer.js"></script>
   <script src="data.js"></script>
   <script src="filters.js"></script>
   <script src="builder.js"></script>
   <script src="pack.js"></script>
   <script src="budget.js"></script>
-  <script src="library.js?v=121"></script>
-  <script src="home.js?v=121"></script>
+  <script src="library.js?v=130"></script>
+  <script src="extras.js?v=130"></script>
+  <script src="home.js?v=130"></script>
 </body>
 </html>

@@ -117,7 +117,7 @@ def parse(name, rows, first_row=0):
             if key in ("section", "line", "type", "source", "sign", "format"):
                 line_cols.setdefault(key, at)
     design = {"name": name, "title": "", "filters": {}, "pages": "", "detail": False, "lines": [], "columns": [],
-              "dropdowns": [], "month": "", "highlight": 0.0, "comments": False, "rules": []}
+              "dropdowns": [], "month": "", "highlight": 0.0, "comments": False, "rules": [], "commentAt": 0.0}
     for row in grid[:header]:
         key = row[0].lower() if row else ""
         key = "filters" if key in ("other filters", "other filter", "filters") else key.replace(" filter", "")
@@ -136,6 +136,8 @@ def parse(name, rows, first_row=0):
             design["highlight"] = highlight_value(value)
         elif key in ("comments column", "comments"):
             design["comments"] = value.lower() in ("yes", "y", "true", "1", "on")
+        elif key in ("comment needed over", "ask for a comment over"):
+            design["commentAt"] = highlight_value(value)
         elif key in ("highlight rules", "rules"):
             design["rules"] = [parse_rule(t)["text"] for t in value.split(";") if t.strip()]
         elif key in FILTER_KINDS and value:
@@ -223,7 +225,13 @@ def new_line(label, kind, source, sign="", fmt="", section="", where=None):
     if not kind or (kind != "subtotal" and not source.lstrip("=").strip()):
         raise ReportError('%s: "%s" needs accounts or a formula.' % (where, label))
     number_format, bold = _format(_cell(fmt))
-    return {"section": _cell(section), "label": label, "kind": kind, "where": where,
+    line_filter = ""
+    if kind == "accounts" and "|" in source:   # "type:Income | Department: Rooms*": the line's own filter
+        source, _, line_filter = source.partition("|")
+        source, line_filter = source.strip(), re.sub(r"\s+", " ", line_filter).strip()
+        if line_filter and ":" not in line_filter:
+            raise ReportError('%s: after | comes a filter such as Department: Rooms (a field, a colon, the values).' % where)
+    return {"section": _cell(section), "label": label, "kind": kind, "where": where, "filter": line_filter,
             "key": "key" in re.split(r"[,\s]+", _cell(fmt).lower()),
             "source": _formula(source) if kind == "formula" else "" if kind == "subtotal" else source,
             "sign": -1 if _cell(sign).replace(" ", "").lower() in ("-1", "-", "minus", "negative", "neg") else 1,
@@ -262,8 +270,10 @@ def public(design):
         "dropdowns": list(design.get("dropdowns") or []), "month": design.get("month", ""),
         "highlight": design.get("highlight") or 0, "comments": bool(design.get("comments")),
         "rules": list(design.get("rules") or []),
-        "lines": [{k: line[k] for k in ("section", "label", "kind", "source", "sign", "format", "bold", "key")}
+        "lines": [dict({k: line[k] for k in ("section", "label", "kind", "source", "sign", "format", "bold", "key")},
+                       source=line["source"] + (" | " + line["filter"] if line.get("filter") else ""))
                   for line in design["lines"]],
+        "commentAt": design.get("commentAt") or 0,
         "columns": [{k: c[k] for k in ("label", "type", "from", "to", "filters", "formula", "format", "data")}
                     for c in design["columns"]],
     }
@@ -501,6 +511,9 @@ def emit(design, activate=True):
               "Optional: e.g. 10%. Change % and Var % cells at or above it turn green, at or below minus it red."]]
     rows += [["Comments column", "yes" if design.get("comments") else "no", "",
               "yes adds a Comments column at the right of the report; what you type there is kept when it is rebuilt."]]
+    rows += [["Comment needed over", "%g%%" % design["commentAt"] if design.get("commentAt") else "", "",
+              "Optional, with a Comments column: e.g. 10%. A line whose change % is at least this (up or down) and has "
+              "no comment yet is marked yellow, so variances get explained."]]
     rows += [["Highlight rules", "; ".join(design.get("rules") or []), "",
               "Optional, separated by ;  e.g. 6100 > 5000 red; Net Profit < 0 red; all between -100 and 100 yellow; "
               "4000-4999 in Month < 10000 amber. Colours: red, yellow, amber, green, blue, grey."]]
@@ -513,7 +526,8 @@ def emit(design, activate=True):
             line = design["lines"][n]
             words = (([line["format"]] if line["format"] != "number" else []) + (["bold"] if line["bold"] else [])
                      + (["key"] if line.get("key") else []))
-            row[:len(LINE_HEADERS)] = [line["section"], line["label"], line["kind"], line["source"],
+            row[:len(LINE_HEADERS)] = [line["section"], line["label"], line["kind"],
+                                       line["source"] + (" | " + line["filter"] if line.get("filter") else ""),
                                        str(line["sign"]) if line["kind"] == "accounts" else "", " ".join(words)]
         if n < len(design["columns"]):
             c = design["columns"][n]
@@ -882,15 +896,19 @@ def build_report(ledger, design, page=None):
         col_of = {c["label"].lower(): j for j, c in enumerate(columns)}
         letter = lambda j: col_letter(2 + j)  # noqa: E731
 
-        def balance(account, j):
+        def balance(account, j, line_filter=""):
             args = []
             for kind in FILTER_KINDS:
                 whole = "$B$%d" % PARAM_ROW[kind]
                 own = "%s$%d" % (letter(j), kind_row[kind]) if kind in kind_row else None
                 if own and kind == "filters":   # both apply: the sheet's other filters and the column's
-                    args.append('IF(%s="",%s,IF(%s="",%s,%s&"; "&%s))' % (own, whole, whole, own, whole, own))
+                    arg = 'IF(%s="",%s,IF(%s="",%s,%s&"; "&%s))' % (own, whole, whole, own, whole, own)
                 else:
-                    args.append('IF(%s="",%s,%s)' % (own, whole, own) if own else whole)
+                    arg = 'IF(%s="",%s,%s)' % (own, whole, own) if own else whole
+                if kind == "filters" and line_filter:   # the line's own filter, added to the others
+                    lf = line_filter.replace('"', '""')
+                    arg = 'IF(%s="","%s",%s&"; %s")' % (arg, lf, arg, lf)
+                args.append(arg)
             data = columns[j].get("data")
             if data and account != '"calc:Days"':  # "budget:" in front of the account asks for the budget
                 account = '"%s:"&%s' % (data.lower(), account)
@@ -917,7 +935,7 @@ def build_report(ledger, design, page=None):
             if column["type"] == "total":
                 return '=IFERROR(%s,"")' % across(j, at)
             if line["kind"] == "accounts":
-                return "=%s%s" % ("-" if line["sign"] < 0 else "", balance("$A%d" % at, j))
+                return "=%s%s" % ("-" if line["sign"] < 0 else "", balance("$A%d" % at, j, line.get("filter", "")))
             added = [l["row"] for l in line["adds"]]
             if added == list(range(added[0], added[-1] + 1)):
                 return "=SUM(%s%d:%s%d)" % (letter(j), added[0], letter(j), added[-1])
@@ -957,7 +975,7 @@ def build_report(ledger, design, page=None):
                 cells = []
                 for j, column in enumerate(columns):
                     if column["type"] == "period":
-                        cells.append("=%s%s" % ("-" if line["sign"] < 0 else "", balance("$A%d" % row, j)))
+                        cells.append("=%s%s" % ("-" if line["sign"] < 0 else "", balance("$A%d" % row, j, line.get("filter", ""))))
                     else:
                         cells.append('=IFERROR(%s,"")' % across(j, row))
                 add([number, name] + cells, color=GREY)
@@ -1015,6 +1033,15 @@ def build_report(ledger, design, page=None):
             text_ranges.append([first_data - 1, col, last, col])
             action["widths"].append({"c0": col, "c1": col, "width": 260})
             action["keep"] = {"header": header_row - 1, "title": "Comments", "key": 1}
+            pct = next((j for j, c in enumerate(columns) if c["type"] != "period" and c["format"] == "percent"), None)
+            if design.get("commentAt") and pct is not None:   # a big variance with no comment yet: marked yellow
+                limit = design["commentAt"] / 100.0
+                at, me = col_letter(2 + pct), col_letter(col)
+                action.setdefault("conditional", []).append({
+                    "r0": first_data - 1, "c0": col, "r1": last_line - 1, "c1": col,
+                    "formula": '=AND(ISNUMBER($%s%d),ABS($%s%d)>=%g,LEN(TRIM(%s%d))=0,LEN($B%d)>0)' % (
+                        at, first_data, at, first_data, limit, me, first_data, first_data),
+                    "fill": "#FFF4CE", "font": "#7A5B00"})
         years = sorted({int(y) for p in ledger.periods() for y in YEAR_RE.findall(p["name"])})
         if year and 1 < len(years) <= 30:
             action["dropdowns"].append({"r": 7, "c": 1, "formula": ",".join(str(y) for y in years)})

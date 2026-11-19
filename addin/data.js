@@ -311,7 +311,25 @@
     });
   }
 
-  window.TQData = { load: load };
+  /* New report > Operational reports: one of the ready-made queries on its own sheet, with its dates set as
+   * parameters first ({from}, {to} as 2026-01-31). */
+  function runTemplate(name, params) {
+    var go = catalog ? Promise.resolve() : post('catalog').then(function (data) { catalog = data.catalog; templates = data.templates || []; });
+    return go.then(function () {
+      var chosen = templates.filter(function (t) { return t.name === name; })[0];
+      if (!chosen) throw new Error('"' + name + '" is not one of the ready-made reports.');
+      var chain = Promise.resolve();
+      Object.keys(params || {}).forEach(function (k) {
+        if (chosen.sql.indexOf('{' + k + '}') === -1) return;
+        chain = chain.then(function () { return request('setParam', { name: k, value: params[k] }, 'Setting ' + k + '…'); });
+      });
+      return chain.then(function () {
+        return request('save', { name: chosen.name, type: 'sql', source: chosen.sql, max: '5000' }, 'Asking NetSuite…');
+      });
+    });
+  }
+
+  window.TQData = { load: load, runTemplate: runTemplate };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();

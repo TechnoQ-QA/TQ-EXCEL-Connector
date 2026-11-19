@@ -33,6 +33,18 @@ TEMPLATES = [
     {"id": "cashflow", "name": "Cash flow, indirect",
      "about": "Net income plus the movement in each balance sheet group, month by month, checked against "
               "the movement in the bank accounts."},
+    {"id": "hotel", "name": "Hotel P&L (USALI summary)",
+     "about": "Revenue and departmental profit for Rooms, Food and Beverage and the other operated departments, the "
+              "undistributed expenses, gross operating profit and GOP %, with occupancy, ADR and RevPAR when the room "
+              "statistics are in NetSuite. Month and year to date against last year; rolls forward."},
+    {"id": "restaurant", "name": "Restaurant P&L",
+     "about": "Food and beverage sales and costs, food cost %, beverage cost %, labour %, prime cost and operating "
+              "profit. Month and year to date against last year; rolls forward."},
+    {"id": "forecast", "name": "Rolling forecast (outlook)",
+     "about": "Actual so far this year plus the forecast for the months left: the full-year outlook against the "
+              "budget. Uses a budget category with forecast in its name for the forecast, if there is one."},
+    {"id": "rolling12", "name": "Last 12 months",
+     "about": "The twelve months up to the report month side by side, with the total. Rolls forward."},
 ]
 
 # (section, line, type, accounts or formula, sign, format)
@@ -125,9 +137,226 @@ def month_ytd_columns():
             new("Change % YTD", "formula", "", "", None, "=[Change YTD]/ABS([YTD last year])", "percent")]
 
 
+# ------------------------------------------------------------- hospitality --
+# Department names differ from customer to customer, so each part of the hotel statement is found by what its
+# department is called (top-level departments; "with everything under it" takes the outlets below).
+_HOTEL_DEPARTMENTS = [   # (key, line name, words that name such a department)
+    ("rooms", "Rooms", r"\brooms?\b(?!\s*service)|accommodation"),
+    ("fnb", "Food and Beverage", r"food|beverage|f\s*&\s*b|f\s*and\s*b|restaurant|banquet|outlet"),
+    ("other", "Other Operated Departments", r"other\s+operat|spa|health|laundry|parking|telecom|business\s+cent|minor"),
+    ("misc", "Miscellaneous Income", r"misc|rental|other\s+income"),
+]
+_HOTEL_UNDISTRIBUTED = [
+    ("ag", "Administrative and General", r"\ba\s*&\s*g\b|admin|general|finance|accounting|purchas"),
+    ("it", "Information and Telecommunications", r"\bit\b|information|technology"),
+    ("sm", "Sales and Marketing", r"sales|marketing|public\s+relation"),
+    ("pom", "Property Operation and Maintenance", r"maint|repair|engineering|\bpom\b|property\s+op"),
+    ("util", "Utilities", r"utilit|energy|power|water"),
+    ("hr", "Human Resources and Security", r"human\s+res|\bhr\b|security|personnel"),
+]
+_STAT = {   # statistical accounts, found by name
+    "available": r"rooms?\s+available|available\s+rooms?|room\s+nights?\s+available",
+    "sold": r"rooms?\s+(sold|occupied)|occupied\s+rooms?|room\s+nights?\s+sold",
+}
+
+
+def _find_departments(ledger, table):
+    """{key: (line name, filter text)} for the departments the ledger has; each top-level department is used once."""
+    try:
+        names = ledger.segments("department")
+    except LedgerError:
+        names = []
+    tops = [n for n in names if " : " not in n] or names
+    found, used = {}, set()
+    for key, label, pattern in table:
+        for name in tops:
+            plain = re.sub(r"^\s*[\w.]*\d[\w.]*\s*[-:]?\s*", "", name)   # "22 Food & Beverage" -> "Food & Beverage"
+            if name not in used and re.search(pattern, plain, re.I):
+                used.add(name)
+                found[key] = (label, "Department: %s*" % name.replace(";", " "))
+                break
+    return found
+
+
+def _stat_accounts(ledger):
+    stats = [a for a in ledger.accounts() if a["type"] == "Stat"]
+    out = {}
+    for key, pattern in _STAT.items():
+        hit = next((a for a in stats if re.search(pattern, a["name"], re.I)), None)
+        if hit:
+            out[key] = hit["number"]
+    return out
+
+
+def _hotel(ledger, name):
+    """USALI summary operating statement, built from the customer's own departments."""
+    deps = _find_departments(ledger, _HOTEL_DEPARTMENTS)
+    if not deps:
+        raise ReportError("No hotel departments were found (such as Rooms or Food and Beverage). The hotel P&L "
+                          "reads its parts from the departments in NetSuite; start from the P&L summary instead.")
+    undistributed = _find_departments(ledger, _HOTEL_UNDISTRIBUTED)
+    for key in [k for k in undistributed if undistributed[k][1] in {v[1] for v in deps.values()}]:
+        undistributed.pop(key)   # a department already used as an operated one
+    notes, lines = [], []
+    operated = [k for k in ("rooms", "fnb", "other") if k in deps]
+    for key in operated + (["misc"] if "misc" in deps else []):
+        label, f = deps[key]
+        lines.append(("Operating Revenue", label + " Revenue", "accounts", "type:Income,OthIncome | " + f, "", ""))
+    lines.append(("Operating Revenue", "Total Operating Revenue", "subtotal", "", "", "bold"))
+    if operated:
+        for key in operated:
+            label, f = deps[key]
+            lines.append(("Departmental Expenses", label + " Expenses", "accounts", "type:COGS,Expense | " + f, "", ""))
+        lines.append(("Departmental Expenses", "Total Departmental Expenses", "subtotal", "", "", "bold"))
+    profits = []
+    for key in operated:
+        label = deps[key][0]
+        lines.append(("Departmental Profit", label + " Profit", "formula", "=[%s Revenue]-[%s Expenses]" % (label, label), "", ""))
+        profits.append(label + " Profit")
+    if "misc" in deps:
+        profits.append(deps["misc"][0] + " Revenue")
+    lines.append(("Departmental Profit", "Total Departmental Profit", "formula",
+                  "=" + "+".join("[%s]" % p for p in profits), "", "bold"))
+    if undistributed:
+        for key, label, _ in _HOTEL_UNDISTRIBUTED:
+            if key in undistributed:
+                lines.append(("Undistributed Operating Expenses", label, "accounts",
+                              "type:Expense,COGS | " + undistributed[key][1], "", ""))
+        lines.append(("Undistributed Operating Expenses", "Total Undistributed Expenses", "subtotal", "", "", "bold"))
+        gop = "=[Total Departmental Profit]-[Total Undistributed Expenses]"
+    else:
+        notes.append("No undistributed departments (A&G, Sales and Marketing, Maintenance...) were found, so the gross "
+                     "operating profit equals the departmental profit.")
+        gop = "=[Total Departmental Profit]"
+    lines.append(("Gross Operating Profit", "Gross Operating Profit", "formula", gop, "", "bold"))
+    lines.append(("Gross Operating Profit", "GOP %", "formula", "=[Gross Operating Profit]/[Total Operating Revenue]", "", "percent"))
+    lines.append(("Non-operating", "Non-operating Income", "accounts", "type:OthIncome", "", ""))
+    lines.append(("Non-operating", "Non-operating Expenses", "accounts", "type:OthExpense", "", ""))
+    lines.append(("Non-operating", "Net Profit", "formula",
+                  "=[Gross Operating Profit]+[Non-operating Income]-[Non-operating Expenses]", "", "bold"))
+    stats = _stat_accounts(ledger)
+    if "rooms" in deps and "available" in stats and "sold" in stats:
+        lines += [("Key Statistics", "Rooms Available", "accounts", stats["available"], "", "integer"),
+                  ("Key Statistics", "Rooms Sold", "accounts", stats["sold"], "", "integer"),
+                  ("Key Statistics", "Occupancy %", "formula", "=[Rooms Sold]/[Rooms Available]", "", "percent"),
+                  ("Key Statistics", "ADR (average daily rate)", "formula", "=[Rooms Revenue]/[Rooms Sold]", "", ""),
+                  ("Key Statistics", "RevPAR", "formula", "=[Rooms Revenue]/[Rooms Available]", "", "")]
+    else:
+        notes.append("Occupancy, ADR and RevPAR are added when NetSuite has statistical accounts named like Rooms "
+                     "Available and Rooms Sold.")
+    missing = [label for key, label, _ in _HOTEL_DEPARTMENTS[:3] if key not in deps]
+    if missing:
+        notes.append("Not found among the departments: %s." % ", ".join(missing))
+    design = _design(name, "Hotel P&L", lines)
+    design["columns"] = month_ytd_columns()
+    design["notes"] = notes
+    return design
+
+
+def _named(ledger, kinds, pattern):
+    """The accounts of these types whose names match: "4010, 4020", or ""."""
+    return ", ".join(a["number"] for a in ledger.accounts() if a["type"] in kinds and re.search(pattern, a["name"], re.I))
+
+
+def _restaurant(ledger, name):
+    """Restaurant P&L: food and beverage sales and costs, labour, prime cost and the usual ratios."""
+    food_sales = _named(ledger, ("Income",), r"food")
+    bev_sales = _named(ledger, ("Income",), r"beverage|drink|\bbar\b|wine|liquor|beer")
+    food_cost = _named(ledger, ("COGS", "Expense"), r"food\s*(cost|cogs|purchase)|cost.*food")
+    bev_cost = _named(ledger, ("COGS", "Expense"), r"(beverage|drink|bar|wine|liquor|beer)\s*(cost|cogs|purchase)|cost.*(beverage|drink)")
+    labour = _named(ledger, ("Expense", "COGS"), r"salar|wage|payroll|staff|labou?r|overtime|benefit|gosi")
+    notes, lines = [], []
+    if food_sales:
+        lines.append(("Sales", "Food Sales", "accounts", food_sales, "", ""))
+    if bev_sales:
+        lines.append(("Sales", "Beverage Sales", "accounts", bev_sales, "", ""))
+    lines.append(("Sales", "Total Sales", "accounts", "type:Income", "", "bold"))
+    if food_sales or bev_sales:
+        known = "+".join("[%s]" % l for l, on in (("Food Sales", food_sales), ("Beverage Sales", bev_sales)) if on)
+        lines.append(("Sales", "Other Sales", "formula", "=[Total Sales]-(%s)" % known, "", ""))
+    else:
+        notes.append("No income accounts named Food or Beverage were found: Total Sales is all income.")
+    if food_cost:
+        lines.append(("Cost of Sales", "Food Cost", "accounts", food_cost, "", ""))
+    if bev_cost:
+        lines.append(("Cost of Sales", "Beverage Cost", "accounts", bev_cost, "", ""))
+    lines.append(("Cost of Sales", "Total Cost of Sales", "accounts", "type:COGS", "", "bold"))
+    lines.append(("Results", "Gross Profit", "formula", "=[Total Sales]-[Total Cost of Sales]", "", "bold"))
+    lines.append(("Results", "Operating Expenses", "accounts", "type:Expense", "", ""))
+    if labour:
+        lines.append(("Results", "of which Labour Cost", "accounts", labour, "", ""))
+        lines.append(("Results", "Prime Cost", "formula", "=[Total Cost of Sales]+[of which Labour Cost]", "", "bold"))
+    else:
+        notes.append("No salary, wage or payroll accounts were found: Labour % and Prime Cost are left out.")
+    lines.append(("Results", "Operating Profit", "formula", "=[Gross Profit]-[Operating Expenses]", "", "bold"))
+    if food_sales and food_cost:
+        lines.append(("Key Ratios", "Food Cost %", "formula", "=[Food Cost]/[Food Sales]", "", "percent"))
+    if bev_sales and bev_cost:
+        lines.append(("Key Ratios", "Beverage Cost %", "formula", "=[Beverage Cost]/[Beverage Sales]", "", "percent"))
+    lines.append(("Key Ratios", "Cost of Sales %", "formula", "=[Total Cost of Sales]/[Total Sales]", "", "percent"))
+    if labour:
+        lines.append(("Key Ratios", "Labour %", "formula", "=[of which Labour Cost]/[Total Sales]", "", "percent"))
+        lines.append(("Key Ratios", "Prime Cost %", "formula", "=[Prime Cost]/[Total Sales]", "", "percent"))
+    lines.append(("Key Ratios", "Operating Margin %", "formula", "=[Operating Profit]/[Total Sales]", "", "percent"))
+    design = _design(name, "Restaurant P&L", lines)
+    design["columns"] = month_ytd_columns()
+    design["notes"] = notes
+    return design
+
+
+def _categories(ledger):
+    try:
+        return [str(c) for c in ledger.call({"action": "budgetInfo"}).get("categories") or []]
+    except LedgerError:
+        return []
+
+
+def _forecast(ledger, name):
+    """Actual to date + forecast for the rest of the year = the outlook, against the full-year budget."""
+    cats = _categories(ledger)
+    fc = next((c for c in cats if re.search(r"forecast|outlook|re-?fore|latest\s+est", c, re.I)), "")
+    bud = next((c for c in cats if c != fc and re.search(r"budget|plan|original", c, re.I)), "")
+    new = layouts.new_column
+    design = _design(name, "Rolling Forecast", _SUMMARY)
+    design["columns"] = [
+        new("Actual to date", "period", "FYS", "CM"),
+        new("Forecast rest of year", "period", "CM+1", "FYE", data="budget(%s)" % fc if fc else "budget"),
+        new("Full year outlook", "formula", "", "", None, "=[Actual to date]+IFERROR([Forecast rest of year],0)"),
+        new("Full year budget", "period", "FYS", "FYE", data="budget(%s)" % bud if bud else "budget"),
+        new("Outlook vs budget", "formula", "", "", None, "=[Full year outlook]-[Full year budget]"),
+        new("Outlook vs budget %", "formula", "", "", None, "=[Outlook vs budget]/ABS([Full year budget])", "percent"),
+    ]
+    notes = ['The months left use the budget category "%s".' % fc if fc else
+             "No budget category with forecast in its name was found, so the months left use the budget. Upload a "
+             "forecast as its own budget category (for example Forecast) and the report uses it."]
+    if bud:
+        notes.append('The full-year budget uses the category "%s".' % bud)
+    design["notes"] = notes
+    return design
+
+
+def _rolling12(ledger, name):
+    """The twelve months up to the report month, side by side, and their total."""
+    new = layouts.new_column
+    label = lambda n: "Month -%d" % n if n else "Report month"  # noqa: E731
+    design = _design(name, "Last 12 Months", _SUMMARY)
+    design["columns"] = [new(label(n), "period", "CM-%d" % n if n else "CM", "CM-%d" % n if n else "CM")
+                         for n in range(11, -1, -1)]
+    design["columns"].append(new("12 month total", "total", "CM-11", "CM", None, "=SUM([Month -11]:[Report month])"))
+    return design
+
+
+SPECIAL = {"hotel": _hotel, "restaurant": _restaurant, "forecast": _forecast, "rolling12": _rolling12}
+
+
 def build(ledger, template, name):
     """A ready-made design. Raises ReportError for an unknown template."""
     template = (template or "management").strip().lower()
+    if template in SPECIAL:
+        try:
+            return SPECIAL[template](ledger, name)
+        except LedgerError as err:
+            raise ReportError(str(err))
     if template == "management":
         return layouts.sample(ledger, name)
     if template == "monthytd":

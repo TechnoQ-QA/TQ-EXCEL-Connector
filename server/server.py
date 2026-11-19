@@ -37,6 +37,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import assistant as assistant_module  # noqa: E402
 import budget as budget_module  # noqa: E402
+import care  # noqa: E402
 import signin as signin_module  # noqa: E402
 import journal as journal_module  # noqa: E402
 import updates as updates_module  # noqa: E402
@@ -45,7 +46,7 @@ import ledger as ledger_module  # noqa: E402
 import licence as licence_module  # noqa: E402
 import tqcrypto  # noqa: E402
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 FROZEN = bool(getattr(sys, "frozen", False))   # running as the installed TQConnector.exe
 if FROZEN:
     ROOT = os.path.dirname(os.path.abspath(sys.executable))
@@ -618,13 +619,16 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(200, {"ok": False, "error": str(err)})
         if path == "/api/setup":
             return self._json(200, setup_view(type(self)))
+        if path == "/api/prefs":
+            return self._json(200, type(self).prefs.handle({"op": "get"}))
         if path.startswith("/api"):
             return self._json(404, {"ok": False, "error": "Not found"})
         return super().do_GET()
 
     def do_POST(self):
         path = urllib.parse.urlsplit(self.path).path
-        if path not in ("/api", "/api/chat", "/api/design", "/api/query", "/api/setup", "/api/budget", "/api/journal", "/api/update", "/api/signout", "/api/logo"):
+        if path not in ("/api", "/api/chat", "/api/design", "/api/query", "/api/setup", "/api/budget", "/api/journal", "/api/update",
+                        "/api/signout", "/api/logo", "/api/prefs", "/api/diagnostics", "/api/export", "/api/import"):
             return self._json(404, {"ok": False, "error": "Not found"})
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -652,6 +656,14 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(200, save_setup(type(self), payload))
         if path == "/api/logo":
             return self._json(200, save_logo(type(self), payload))
+        if path == "/api/prefs":
+            return self._json(200, type(self).prefs.handle(payload))
+        if path == "/api/diagnostics":
+            return self._json(200, save_diagnostics(type(self)))
+        if path == "/api/export":
+            return self._json(200, export_setup(type(self), payload))
+        if path == "/api/import":
+            return self._json(200, import_setup(type(self), payload))
         if path == "/api/chat":
             return self._json(200, type(self).chat.handle(payload))
         if path == "/api/design":
@@ -692,6 +704,7 @@ def configure(handler, cfg, today=None, licence_text=None):
     account, NetSuite is not asked for anything but the connection test.
     """
     handler.session = None
+    handler.prefs = care.Prefs(os.path.dirname(handler.licence_path))
     if cfg and str(cfg.get("clientId", "")).strip():   # "Sign in with NetSuite": each person's own token
         handler.session = signin_module.Session(cfg, os.path.dirname(handler.licence_path))
         cfg["_session"] = handler.session
@@ -796,7 +809,86 @@ def setup_view(handler):
             "logo": "custom" if custom_logo(handler) else "netsuite",
             "hasSecrets": all(str(cfg.get(k) or "").strip() for k in SECRET_KEYS),
             "aiOn": bool(str(ai.get("apiKey") or "").strip()), "licence": handler.licence,
-            "dataFolder": os.path.dirname(handler.config_path)}
+            "dataFolder": os.path.dirname(handler.config_path),
+            "certExpires": str(care.cert_expires(CERT_PATH) or "") if os.path.exists(CERT_PATH) else "",
+            "certDaysLeft": care.cert_days_left(CERT_PATH) if os.path.exists(CERT_PATH) else None}
+
+
+def _status(handler):
+    return {"mode": handler.mode, "version": VERSION, "licence": handler.licence,
+            "seats": getattr(handler, "seats", None) and handler.seats.state,
+            "update": getattr(handler, "watcher", None) and handler.watcher.state,
+            "signIn": handler.session.info() if getattr(handler, "session", None) else None}
+
+
+def save_diagnostics(handler):
+    """Setup page > Save diagnostics: a zip for Techno Q support in Documents\\TQ Connector (no secrets)."""
+    try:
+        path = care.diagnostics(os.path.dirname(handler.config_path), VERSION, _status(handler),
+                                _saved_config(handler.config_path), CERT_PATH, open_folder=FROZEN)
+    except OSError as err:
+        return {"ok": False, "error": "Could not write the diagnostics file: %s" % err}
+    return {"ok": True, "path": path}
+
+
+def export_setup(handler, payload):
+    """Move to another PC > Export: settings (no secrets), licence, logo, filter sets, plus the layouts and
+    queries the panel sends from the workbook, in one file in Documents\\TQ Connector."""
+    licence_text = ""
+    try:
+        with open(handler.licence_path, encoding="utf-8") as f:
+            licence_text = f.read()
+    except OSError:
+        pass
+    try:
+        path, summary = care.export_bundle(_saved_config(handler.config_path), licence_text, custom_logo(handler),
+                                           handler.prefs.read(), payload.get("layouts"), payload.get("queries"),
+                                           VERSION, payload.get("name"))
+    except OSError as err:
+        return {"ok": False, "error": "Could not write the setup file: %s" % err}
+    if FROZEN:
+        care.show_in_folder(path)
+    return {"ok": True, "path": path, "summary": summary}
+
+
+def import_setup(handler, payload):
+    """Move to another PC > Import: {bundle, use: {settings, licence, logo, filterSets}} -> what was applied.
+    The layouts and queries are written into the workbook by the panel itself."""
+    try:
+        bundle = care.read_bundle(payload.get("bundle"))
+    except ValueError as err:
+        return {"ok": False, "error": str(err)}
+    use = payload.get("use") if isinstance(payload.get("use"), dict) else {}
+    done, notes = [], []
+    if use.get("filterSets") and bundle.get("filterSets"):
+        prefs = handler.prefs.read()
+        have = {s.get("name", "").lower(): s for s in prefs.get("filterSets") or [] if isinstance(s, dict)}
+        for item in bundle["filterSets"]:
+            if isinstance(item, dict) and item.get("name"):
+                have[str(item["name"]).lower()] = {"name": str(item["name"])[:60], "cells": item.get("cells") or {}}
+        prefs["filterSets"] = sorted(have.values(), key=lambda x: x["name"].lower())
+        handler.prefs.write(prefs)
+        done.append("%d filter set(s)" % len(bundle["filterSets"]))
+    if use.get("logo") and isinstance(bundle.get("logo"), dict):
+        answer = save_logo(handler, {"op": "save", "data": bundle["logo"].get("data", "")})
+        (done if answer.get("ok") else notes).append("the logo" if answer.get("ok") else "Logo: " + answer["error"])
+    if (use.get("settings") or use.get("licence")) and (bundle.get("settings") or bundle.get("licence")):
+        current = _saved_config(handler.config_path)
+        settings = bundle["settings"] if use.get("settings") else {k: current.get(k, "") for k in care.MOVED_SETTINGS}
+        body = dict(settings, licence=bundle.get("licence", "") if use.get("licence") else "")
+        body["authMode"] = "oauth2" if settings.get("clientId") else "tba"
+        answer = save_setup(handler, body)
+        if answer.get("ok"):
+            done.append("the NetSuite connection" if use.get("settings") else "the licence")
+            if use.get("licence") and bundle.get("licence") and use.get("settings"):
+                done.append("the licence")
+            if answer.get("signIn"):
+                notes.append("Sign in with NetSuite on this PC to finish (the panel shows the link).")
+            elif not answer.get("connected"):
+                notes.append("NetSuite did not answer yet: " + (answer.get("error") or "check the setup page."))
+        else:
+            notes.append(answer.get("error") or "The settings could not be saved.")
+    return {"ok": True, "done": done, "notes": notes}
 
 
 def save_setup(handler, payload):
@@ -898,6 +990,7 @@ def main():
     parser.add_argument("--mock", action="store_true", help="use sample data even if config.json exists")
     parser.add_argument("--http", action="store_true", help="plain HTTP (browser preview only; Excel needs HTTPS)")
     parser.add_argument("--make-cert", action="store_true", help="make this PC's localhost certificate and stop")
+    parser.add_argument("--watch", action="store_true", help="keep the connector running: start it again if it stops")
     args = parser.parse_args()
 
     if sys.stdout is None or FROZEN:  # the installed exe has no console: keep a log instead
@@ -907,6 +1000,9 @@ def main():
 
     if args.make_cert:
         print("Certificate made, thumbprint %s" % make_certificate())
+        return
+    if args.watch:   # the start-up shortcut runs this: the connector itself is a child that is restarted if it stops
+        care.watch(sys.argv[1:], FROZEN, os.path.abspath(__file__), args.port)
         return
 
     try:
@@ -921,6 +1017,10 @@ def main():
         if not FROZEN:
             sys.exit("No HTTPS certificate found. Run scripts\\setup-excel.ps1 first (see README).")
         make_certificate()
+    if FROZEN and not args.http and os.path.exists(CERT_PATH):
+        note = care.renew_certificate(CERT_PATH, KEY_PATH, make_certificate)
+        if note:
+            print(note)
 
     try:
         httpd = make_server(args.port, cfg, use_tls=not args.http)

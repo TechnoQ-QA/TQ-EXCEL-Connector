@@ -10,3 +10,4 @@ data/
 *.pfx
 *.key
 .claude/
+server/prefs.json

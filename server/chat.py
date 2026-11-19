@@ -813,7 +813,7 @@ class ChatService:
             design = templates.build(self.ledger, template, templates.layout_name(wanted, taken))
             if wanted:
                 design["title"] = wanted
-            notes = []
+            notes = design.pop("notes", [])
             lead = 'Layout sheet "%s" was made from the template "%s".' % (design["name"], next(
                 (t["name"] for t in templates.TEMPLATES if t["id"] == template), template))
         if _text(args.get("month")):
@@ -839,7 +839,7 @@ class ChatService:
             "filters in B3:B7) and use Refresh this sheet; everything moves. The numbers come from the data block on "
             "the right of the sheet." % (info["sheet"], info["month"], info["charts"]))}
 
-    WIZARD_ROLLING = ("monthytd", "balance")   # reports that follow a month cell
+    WIZARD_ROLLING = ("monthytd", "balance", "hotel", "restaurant", "forecast", "rolling12")   # follow a month cell
 
     def _wizard(self, context, args):
         """The report wizard: every report it makes is a layout, so it can be changed and rebuilt in place.
@@ -882,14 +882,19 @@ class ChatService:
         design["detail"] = bool(args.get("detail"))
         design["comments"] = bool(args.get("comments"))
         design["highlight"] = layouts.highlight_value(arg_text(args, "highlight"))
+        design["commentAt"] = layouts.highlight_value(arg_text(args, "commentAt"))
+        if design["commentAt"]:
+            design["comments"] = True
         sheets = [_text(s).lower() for s in context.get("sheets") or []]
         if reports.sheet_name(design["title"]).lower() in sheets:   # never write over a sheet that is there
             base, n = design["title"], 2
             while reports.sheet_name("%s %d" % (base, n)).lower() in sheets:
                 n += 1
             design["title"] = "%s %d" % (base, n)
+        notes = design.pop("notes", [])
         return self._publish(design, 'Report "%s" is built. Its layout is on sheet "%s": change it there, in Report '
-                                     "layout, or in the chat, and it is rebuilt in place." % (design["title"], design["name"]))
+                                     "layout, or in the chat, and it is rebuilt in place." % (design["title"], design["name"]),
+                             notes=notes)
 
     def _layout_sample(self, context, name=""):
         design = self._sample_design(context, name)
@@ -1154,6 +1159,12 @@ class ChatService:
                     lead = "Highlight rule removed."
                 design["rules"] = rules
                 return self._publish(design, lead, count)
+            elif op == "setCommentAt":
+                design["commentAt"] = layouts.highlight_value(arg("commentAt"))
+                if design["commentAt"]:
+                    design["comments"] = True   # asking for comments needs the Comments column
+                return self._publish(design, "Comments are asked for when a change is %s." % (
+                    "at least %g%% up or down" % design["commentAt"] if design["commentAt"] else "any size (marking off)"), count)
             elif op == "setComments":
                 design["comments"] = bool(args.get("comments"))
                 return self._publish(design, "Comments column: %s." % ("on" if design["comments"] else "off"), count)

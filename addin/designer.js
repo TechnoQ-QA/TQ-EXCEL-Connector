@@ -10,7 +10,7 @@
   var accounts = null;    // [{number, name, type}] for the account search
   var listsLoaded = false;
   var busy = false;
-  var BUILDS = ['build', 'setPages', 'setDetail', 'setComments', 'setHighlight', 'addRule', 'removeRule'];  // requests that rebuild the report as well
+  var BUILDS = ['build', 'setPages', 'setDetail', 'setComments', 'setCommentAt', 'setHighlight', 'addRule', 'removeRule'];  // requests that rebuild the report as well
   var $ =function (id) { return document.getElementById(id); };
 
   function say(text, bad) {
@@ -113,6 +113,7 @@
     var h = design.highlight ? String(Number(design.highlight)) : '';
     if (h && !Array.prototype.some.call($('dHighlight').options, function (o) { return o.value === h; })) option($('dHighlight'), h, h + '%');
     $('dHighlight').value = h;
+    if ($('dCommentAt')) $('dCommentAt').value = design.commentAt ? String(Number(design.commentAt)) : '';
     var rules = $('rList');
     rules.textContent = '';
     (design.rules || []).forEach(function (text) {
@@ -358,6 +359,7 @@
     $('dDetail').addEventListener('change', function () { request('setDetail', { detail: $('dDetail').checked }, 'Building the report…'); });
     $('dComments').addEventListener('change', function () { request('setComments', { comments: $('dComments').checked }, 'Building the report…'); });
     $('dHighlight').addEventListener('change', function () { request('setHighlight', { highlight: $('dHighlight').value }, 'Building the report…'); });
+    if ($('dCommentAt')) $('dCommentAt').addEventListener('change', function () { request('setCommentAt', { commentAt: $('dCommentAt').value }, 'Building the report…'); });
     $('rOp').addEventListener('change', function () { $('rV2').hidden = $('rOp').value !== 'between'; });
     $('rAdd').addEventListener('click', function () {
       var target = $('rTarget').value.trim() || 'all';

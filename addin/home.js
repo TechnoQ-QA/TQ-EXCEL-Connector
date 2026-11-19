@@ -160,6 +160,7 @@
       : k.layout ? 'Sheet "' + name + '", from layout "' + k.layout + '". Changes there rebuild it in place.'
         : 'Sheet "' + name + '". A standard report: ask the chat for changes, or use New report for one you can edit.';
     $('rpLayoutRow').hidden = !k.layout;
+    $('rpRestoreRow').hidden = !(window.TQChat && TQChat.hasBackup(name));
     $('rpMonthBox').hidden = !k.month;
     if (k.month) monthPicker(k.month);
   }
@@ -198,6 +199,14 @@
     setMonth(select.value);
   }
 
+  var known = [];   // the reports in the workbook, for the quick search
+  function openSheet(name) {
+    Excel.run(function (context) {
+      context.workbook.worksheets.getItem(name).activate();
+      return context.sync();
+    }).then(function () { window.TQNav.go('report'); showCard(); }).catch(function () {});
+  }
+
   /* Home's list of the TQ reports and dashboards in this workbook. */
   function listReports() {
     var box = $('reportList');
@@ -214,6 +223,7 @@
         });
       });
     }).then(function (found) {
+      known = found.map(function (x) { return { name: x.name, title: x.k.title || x.name }; });
       box.textContent = '';
       if (!found.length) { box.appendChild(el('div', 'No TQ reports yet. Start with New report.', 'empty')); return; }
       found.forEach(function (x) {
@@ -278,6 +288,17 @@
     { id: 'balance', group: 'Reports', title: 'Balance sheet', about: 'As at a month, the same month last year and last year end. Rolls forward.', rolling: true },
     { id: 'cashflow', group: 'Reports', title: 'Cash flow', about: 'Indirect method, month by month, checked against the bank accounts.' },
     { id: 'own', group: 'Reports', title: 'My own format', about: 'Typed on a sheet: its rows become the report lines.' },
+    { id: 'hotel', group: 'Hospitality', title: 'Hotel P&L (USALI summary)', about: 'Rooms, F&B and other operated departments, undistributed expenses, GOP and GOP %, with occupancy, ADR and RevPAR when the statistics are in NetSuite. Rolls forward.', rolling: true },
+    { id: 'restaurant', group: 'Hospitality', title: 'Restaurant P&L', about: 'Food and beverage sales, food cost %, beverage cost %, labour %, prime cost and operating profit. Rolls forward.', rolling: true },
+    { id: 'forecast', group: 'Planning', title: 'Rolling forecast (outlook)', about: 'Actual so far this year plus the forecast for the months left, the full-year outlook against the budget. Rolls forward.', rolling: true },
+    { id: 'rolling12', group: 'Planning', title: 'Last 12 months', about: 'The twelve months up to the report month, side by side, with the total. Rolls forward.', rolling: true },
+    { id: 'op-ar', group: 'Operational reports', title: 'Receivables aging', about: 'Unpaid customer invoices by customer, in buckets by days overdue today.', query: 'Receivables aging' },
+    { id: 'op-ap', group: 'Operational reports', title: 'Payables aging', about: 'Unpaid vendor bills by vendor, in buckets by days overdue today.', query: 'Payables aging' },
+    { id: 'op-open', group: 'Operational reports', title: 'Open invoices', about: 'Every unpaid customer invoice with its due date and days overdue.', query: 'Open invoices' },
+    { id: 'op-sales-cust', group: 'Operational reports', title: 'Sales by customer', about: 'Invoices and cash sales in a date range, totalled by customer.', query: 'Sales by customer', dates: true },
+    { id: 'op-sales-item', group: 'Operational reports', title: 'Sales by item', about: 'Quantity and amount sold per item in a date range.', query: 'Sales by item', dates: true },
+    { id: 'op-purch', group: 'Operational reports', title: 'Purchases by vendor', about: 'Vendor bills in a date range, totalled by vendor.', query: 'Purchases by vendor', dates: true },
+    { id: 'op-stock', group: 'Operational reports', title: 'Stock on hand', about: 'Quantity on hand and available for each item and location.', query: 'Stock on hand' },
     { id: 'dash-executive', group: 'Dashboards', title: 'Dashboard: executive', about: 'Tiles for sales, gross profit, net income and cash; charts of sales by month, by location and where the money went.', rolling: true, dashboard: 'executive' },
     { id: 'dash-sales', group: 'Dashboards', title: 'Dashboard: sales', about: 'Sales this month and year to date, sales by month against last year, gross margin, sales by location.', rolling: true, dashboard: 'sales' },
     { id: 'dash-cash', group: 'Dashboards', title: 'Dashboard: cash', about: 'Cash, receivables and payables by month, cash movement and the bank accounts.', rolling: true, dashboard: 'cash' },
@@ -314,7 +335,7 @@
     box.textContent = '';
     box.appendChild(el('h3', w.step === 0 ? 'New report' : w.kind.title));
     var bar = el('div', '', 'steps');
-    STEPS.forEach(function (s, n) { if (!(w.kind.dashboard && n === 3)) bar.appendChild(el('span', '', n <= w.step ? 'on' : '')); });
+    STEPS.forEach(function (s, n) { if (!((w.kind.dashboard && n === 3) || (w.kind.query && (n === 2 || n === 3)))) bar.appendChild(el('span', '', n <= w.step ? 'on' : '')); });
     box.appendChild(bar);
     box.appendChild(el('div', 'Step: ' + STEPS[w.step], 'steps-label'));
     var body = el('div');
@@ -322,10 +343,11 @@
     [stepWhat, stepPeriods, stepFilters, stepSheets, stepCheck][w.step](body);
     var row = el('div', '', 'row wrap');
     row.style.marginTop = '14px';
-    if (w.step > 0) row.appendChild(button('Back', function () { w.step -= (w.kind.dashboard && w.step === 4) ? 2 : 1; draw(); }));
+    if (w.step > 0) row.appendChild(button('Back', function () { w.step = w.kind.query && w.step === 4 ? 1 : w.step - ((w.kind.dashboard && w.step === 4) ? 2 : 1); draw(); }));
     if (w.step > 0 && w.step < STEPS.length - 1) {
       row.appendChild(button('Next', function () {
         w.step += 1;
+        if (w.kind.query) w.step = 4;                       // a data report has no filters or extra sheets
         if (w.kind.dashboard && w.step === 3) w.step = 4;   // a dashboard has no extra sheets to choose
         draw();
       }, 'btn primary'));
@@ -365,6 +387,20 @@
   }
 
   function stepPeriods(body) {
+    if (w.kind.query) {
+      if (!w.kind.dates) { body.appendChild(el('p', 'Nothing to choose: it shows today\'s position. Press Next.', 'hint')); return; }
+      var today = new Date();
+      w.from = w.from || today.getFullYear() + '-01-01';
+      w.to = w.to || today.toISOString().slice(0, 10);
+      [['from', 'From date'], ['to', 'To date']].forEach(function (d) {
+        var input = el('input', '', 'field');
+        input.type = 'date';
+        input.value = w[d[0]];
+        input.addEventListener('change', function () { w[d[0]] = input.value; });
+        body.appendChild(field(d[1], input));
+      });
+      return;
+    }
     if (w.kind.rolling) {
       var s = select([['', 'Loading…']], '', function (v) { w.month = v; });
       body.appendChild(field('Report month (change it later on the report to roll forward)', s));
@@ -398,16 +434,73 @@
     }
   }
 
+  /* One filter box of the wizard: "All", or several values ticked in a searchable list (with or without
+   * everything under them). Stored as the report's filter text: "Rooms, Food & Beverage*". */
+  function multiPick(kind, values) {
+    var box = el('div', '', 'mpick');
+    var head = el('button', '', 'mpick-head');
+    head.type = 'button';
+    var panel = el('div', '', 'mpick-panel');
+    panel.hidden = true;
+    var search = el('input', '', 'field');
+    search.type = 'search';
+    search.placeholder = 'Search…';
+    var list = el('div', '', 'pick tall');
+    var under = el('label', '', 'check');
+    var underBox = el('input');
+    underBox.type = 'checkbox';
+    under.appendChild(underBox);
+    under.appendChild(document.createTextNode(' With everything under each one'));
+    var current = String(w.filters[kind] || '');
+    underBox.checked = /\*/.test(current);
+    var chosen = current ? current.split(',').map(function (x) { return x.replace(/\*$/, '').trim(); }).filter(Boolean) : [];
+    function store() {
+      w.filters[kind] = chosen.map(function (x) { return x + (underBox.checked ? '*' : ''); }).join(', ');
+      head.textContent = (chosen.length ? chosen.slice(0, 2).join(', ') + (chosen.length > 2 ? ' +' + (chosen.length - 2) : '') : 'All') + '  ▾';
+    }
+    function draw() {
+      list.textContent = '';
+      var q = search.value.trim().toLowerCase();
+      values.filter(function (v) { return !q || v.toLowerCase().indexOf(q) !== -1; }).slice(0, 300).forEach(function (v) {
+        var l = el('label', '', 'check');
+        var c = el('input');
+        c.type = 'checkbox';
+        c.checked = chosen.indexOf(v) !== -1;
+        c.addEventListener('change', function () {
+          chosen = chosen.filter(function (x) { return x !== v; });
+          if (c.checked) chosen.push(v);
+          store();
+        });
+        l.appendChild(c);
+        l.appendChild(document.createTextNode(' ' + v));
+        list.appendChild(l);
+      });
+    }
+    head.addEventListener('click', function () { panel.hidden = !panel.hidden; if (!panel.hidden) { draw(); search.focus(); } });
+    search.addEventListener('input', draw);
+    underBox.addEventListener('change', store);
+    var clear = button('All (clear)', function () { chosen = []; store(); draw(); });
+    panel.appendChild(search);
+    panel.appendChild(list);
+    panel.appendChild(under);
+    panel.appendChild(clear);
+    box.appendChild(head);
+    box.appendChild(panel);
+    store();
+    return box;
+  }
+
   function stepFilters(body) {
-    body.appendChild(el('div', 'Leave a box on All for everything. You can change these on the report later.', 'hint'));
+    body.appendChild(el('div', 'Leave a box on All for everything, or tick several values. You can change these on the report later.', 'hint'));
     ['subsidiary', 'department', 'class', 'location'].forEach(function (kind) {
-      var s = select([['', 'All']], w.filters[kind] || '', function (v) { w.filters[kind] = v; });
-      var f = field(kind.charAt(0).toUpperCase() + kind.slice(1), s);
+      var holder = el('div');
+      var f = field(kind.charAt(0).toUpperCase() + kind.slice(1), holder);
+      holder.appendChild(el('div', 'Loading…', 'hint'));
       body.appendChild(f);
       TQ.callApi({ action: 'segments', kind: kind }).then(function (d) {
-        d.segments.forEach(function (x) { var o = el('option', x.name); o.value = x.name; s.appendChild(o); });
-        s.value = w.filters[kind] || '';
-        if (!d.segments.length) f.hidden = true;
+        holder.textContent = '';
+        if (!d.segments.length) { f.hidden = true; return; }
+        holder.appendChild(multiPick(kind, d.segments.map(function (x) { return x.name; })));
       }).catch(function () { f.hidden = true; });
     });
     var extra = el('div');
@@ -448,10 +541,15 @@
     });
     body.appendChild(field('Highlight change % over', select(
       [['', 'No highlights'], ['5', '5%'], ['10', '10%'], ['20', '20%'], ['25', '25%']], w.highlight, function (v) { w.highlight = v; })));
+    body.appendChild(field('Ask for a comment when a change is at least (adds a Comments column)', select(
+      [['', "Don't ask"], ['5', '5%'], ['10', '10%'], ['20', '20%']], w.commentAt || '', function (v) { w.commentAt = v; })));
   }
 
   function sentence() {
     var parts = [w.kind.title];
+    if (w.kind.query) {
+      return w.kind.title + (w.kind.dates ? ' from ' + w.from + ' to ' + w.to : '') + ', on a sheet of its own. Refresh it any time from Data table > Refresh data.';
+    }
     if (w.kind.dashboard) {
       var f = Object.keys(w.filters).filter(function (k) { return w.filters[k]; }).map(function (k) { return k + ' ' + w.filters[k]; });
       return w.kind.title + ' for ' + (w.month || 'last month') + ', rolling forward from B8' + (f.length ? ', for ' + f.join(', ') : '') + '.';
@@ -470,11 +568,13 @@
     if (w.detail) parts.push('listing the GL accounts');
     if (w.comments) parts.push('with a Comments column');
     if (w.highlight) parts.push('highlighting changes over ' + w.highlight + '%');
+    if (w.commentAt) parts.push('asking for a comment on changes of ' + w.commentAt + '% or more');
     return parts.filter(Boolean).join(', ') + '.';
   }
 
   function stepCheck(body) {
     body.appendChild(el('p', sentence()));
+    if (w.kind.query) return;   // a data report is named after its query
     var t = el('input', '', 'field');
     t.type = 'text';
     t.placeholder = 'Report title (optional)';
@@ -484,10 +584,19 @@
   }
 
   function create() {
+    if (w.kind.query) {
+      $('wMessage').textContent = 'Asking NetSuite…';
+      return TQData.runTemplate(w.kind.query, w.kind.dates ? { from: w.from, to: w.to } : {}).then(function (data) {
+        if (!data) throw new Error('NetSuite did not answer. Try again, or open Data table to see why.');
+        TQPanel.say(data.reply ? String(data.reply).split('\n')[0] : w.kind.title + ' is on its own sheet.');
+        window.TQNav.replace('home');
+        showCard();
+      }).catch(function (e) { $('wMessage').textContent = e.message; $('wMessage').className = 'status-line bad'; });
+    }
     var args = {
       template: w.kind.template || w.kind.id, title: w.title || '', month: w.month || '', year: w.year || '',
       shape: w.shape || 'month', compare: w.compare || '', filters: w.filters, dropdowns: w.dropdowns,
-      pages: w.pages, detail: w.detail, comments: w.comments, highlight: w.highlight
+      pages: w.pages, detail: w.detail, comments: w.comments || !!w.commentAt, highlight: w.highlight, commentAt: w.commentAt || ''
     };
     $('wMessage').textContent = w.kind.dashboard ? 'Building the dashboard…' : 'Building the report…';
     if (w.kind.dashboard) args = { kind: w.kind.dashboard, month: w.month || '', filters: w.filters, title: w.title || '' };
@@ -539,6 +648,16 @@
     $('hMonth').addEventListener('change', function () { setMonth($('hMonth').value); });
     $('rpPrev').addEventListener('click', function () { stepMonth(-1); });
     $('rpNext').addEventListener('click', function () { stepMonth(1); });
+    $('rpRestore').addEventListener('click', function () {
+      if ($('rpRestore').textContent !== 'Restore?') {   // a second click confirms (Office panels have no confirm())
+        $('rpRestore').textContent = 'Restore?';
+        TQPanel.say('Click Restore? again to put back the version from before the last rebuild of this sheet.');
+        setTimeout(function () { $('rpRestore').textContent = 'Restore'; }, 5000);
+        return;
+      }
+      $('rpRestore').textContent = 'Restore';
+      TQChat.restoreSheet(currentSheet).then(function (msg) { TQPanel.say(msg); }, function (e) { TQPanel.say(e.message, true); });
+    });
     $('rpEdit').addEventListener('click', function () {
       var open = function () { window.TQNav.go('layout'); };
       if (reportLayout && window.TQDesigner) TQDesigner.select(reportLayout).then(open, open); else open();
@@ -605,7 +724,20 @@
     });
   }
 
-  window.TQHome = { openWizard: openWizard, showCard: showCard, welcome: welcome };
+  /* Straight to one kind of report (quick search): the wizard opens at its second step. */
+  function openKind(id) {
+    var kind = KINDS.filter(function (k) { return k.id === id; })[0];
+    if (!kind) return;
+    openWizard();
+    if (kind.id === 'own') { stepWhat($('wizard')); return; }
+    w.kind = kind;
+    w.step = 1;
+    draw();
+  }
+
+  window.TQHome = { openWizard: openWizard, showCard: showCard, welcome: welcome, openKind: openKind, openSheet: openSheet,
+    kinds: function () { return KINDS.filter(function (k) { return k.id !== 'own'; }); },
+    reports: function () { return known.slice(); } };
 
   if (window.Office && Office.onReady) Office.onReady(function () { start(); });
   else if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);

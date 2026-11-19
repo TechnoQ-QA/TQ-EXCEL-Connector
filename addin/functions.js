@@ -46,12 +46,13 @@
     return new Error(message);
   }
 
+  var DOWN = 'TQ Connector is not running on this PC. Start it from the Start menu (TQ Connector), wait a few seconds, then try again.';
   function callApi(payload) {
     return fetch(API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    }).then(function (response) {
+    }).catch(function () { throw new Error(DOWN); }).then(function (response) {
       return response.json().then(
         function (data) {
           if (!data || !data.ok) throw new Error((data && data.error) || 'Request failed');
@@ -229,6 +230,7 @@
     accountName: accountName,
     period: period,
     callApi: callApi,
+    DOWN: DOWN,
     clearCache: clearCache,
     requestForAddress: function (address) {
       return registry.get(normalizeAddress(address)) || null;

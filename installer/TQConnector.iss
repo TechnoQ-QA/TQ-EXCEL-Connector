@@ -5,7 +5,7 @@
 ;   - stops a running connector and replaces its files in %LOCALAPPDATA%\TQ Connector; the data folder
 ;     (settings, licence, this PC's certificate and seat) is kept
 ;   - makes this PC's certificate for https://localhost the first time and asks Windows to trust it
-;   - registers the add-in with Excel and starts the connector at every sign-in
+;   - registers the add-in with Excel and starts the connector at every sign-in (and again if it ever stops)
 ;   - starts the connector; on a first install it offers to open the setup page
 ; Uninstall (Windows Settings > Apps) undoes all of it and keeps the data folder.
 ; To sign the setup file, build.ps1 adds SignTool=... once Techno Q's code-signing certificate is set up.
@@ -61,7 +61,9 @@ Name: "{app}\data"; Flags: uninsneveruninstall
 Root: HKCU; Subkey: "Software\Microsoft\Office\16.0\WEF\Developer"; ValueType: string; ValueName: "{#AddinId}"; ValueData: "{app}\addin\manifest.xml"; Flags: uninsdeletevalue
 
 [Icons]
-Name: "{userstartup}\TQ Connector"; Filename: "{app}\TQConnector.exe"; WorkingDir: "{app}"; Comment: "TQ Connector for NetSuite (local server for Excel)"
+; --watch: the connector is started again by itself if it ever stops, so Excel's add-in never stays broken
+Name: "{userstartup}\TQ Connector"; Filename: "{app}\TQConnector.exe"; Parameters: "--watch"; WorkingDir: "{app}"; Comment: "TQ Connector for NetSuite (local server for Excel)"
+Name: "{userprograms}\TQ Connector"; Filename: "{app}\TQConnector.exe"; Parameters: "--watch"; WorkingDir: "{app}"; Comment: "Start TQ Connector for NetSuite (if Excel says the add-in cannot load)"
 
 [Run]
 Filename: "https://localhost:3000/setup.html"; Description: "Open the setup page (NetSuite details and licence)"; Flags: shellexec postinstall skipifsilent nowait; Check: FirstInstall
@@ -202,7 +204,7 @@ begin
       MsgBox('The certificate was not trusted, so Excel cannot load the add-in yet. Run the setup again and answer Yes in the Windows window.', mbError, MB_OK);
   end;
   WizardForm.StatusLabel.Caption := 'Starting the connector...';
-  Exec(ExpandConstant('{app}\TQConnector.exe'), '', ExpandConstant('{app}'), SW_HIDE, ewNoWait, Code);
+  Exec(ExpandConstant('{app}\TQConnector.exe'), '--watch', ExpandConstant('{app}'), SW_HIDE, ewNoWait, Code);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

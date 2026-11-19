@@ -624,6 +624,54 @@ remove), drill down and the large window (accounts, transactions, sort, search, 
 error, the stamps. **Not yet tried inside Excel:** the right-click menu, the shortcuts, the dialog window, the
 report screen following the open sheet.
 
+### Version 1.4
+
+**Reliability and support**
+- **Keeps running:** the start-up shortcut and the installer start `TQConnector.exe --watch`, which runs the
+  connector and starts it again if it ever stops. A Start-menu shortcut (TQ Connector) starts it by hand.
+- **Certificate renewal:** 60 days before this PC's localhost certificate expires (it lasts 825 days), the
+  connector makes a new one at start-up and asks Windows to trust it; the files are swapped only once it is
+  trusted. The setup page shows the expiry date.
+- **Save diagnostics** (setup page): a zip in Documents\TQ Connector with versions, status, settings with every
+  key, token and password replaced by ***, and the end of the log. Never the sign-in, certificate key or licence key.
+- **Script version check:** the panel says when NetSuite's TQ script is older than the add-in needs (7).
+- **Plain errors:** when the connector does not answer, the panel says so and how to start it.
+- **Restore previous version:** before a report sheet is rebuilt, a hidden copy is kept (one per sheet, up to 12
+  per rebuild); This report > Previous version > Restore puts its cells back.
+
+**Easier to use**
+- New report: several values per filter box (search and tick, with or without everything under them), and
+  **Operational reports** (receivables and payables aging, open invoices, sales by customer and by item,
+  purchases by vendor, stock on hand) straight from the wizard.
+- **Quick search** on Home: type "aging", "hotel", "refresh"… for any report to make, action or sheet.
+- **Help:** the ? button shows a tip for the current screen; This report > Show me around this sheet selects the
+  month cell, the filters and a live number in turn and says what each does.
+
+**Hospitality and planning templates** (New report)
+- **Hotel P&L (USALI summary):** revenue, departmental expenses and profit for Rooms, Food and Beverage, other
+  operated departments and miscellaneous income; undistributed expenses (A&G, IT, sales and marketing,
+  maintenance, utilities, HR); GOP and GOP %; non-operating; and occupancy, ADR and RevPAR when statistical
+  accounts such as Rooms Available and Rooms Sold exist. The departments are found by name in the customer's
+  NetSuite, so it fits any hotel. It relies on a new layout feature: a line can carry its own filter,
+  `type:Income | Department: Rooms Division*`.
+- **Restaurant P&L:** food and beverage sales and costs (accounts found by name), labour, prime cost, food cost %,
+  beverage cost %, labour %, prime cost %, operating margin.
+- **Rolling forecast (outlook):** actual to date + forecast for the months left (a budget category with
+  "forecast" in its name, else the budget) = full-year outlook, against the full-year budget.
+- **Last 12 months:** twelve rolling months and their total.
+
+**Saved filter sets and commentary**
+- On This report: save the report's filters under a name ("Riyadh hotels") and apply them to any report.
+  Kept on this PC (data\prefs.json) and taken along by Move to another PC.
+- Layout option "Ask for a comment when a change is at least 10%" (also in the wizard): such lines without a
+  comment are marked yellow. This report > Comments > Collect builds a **TQ Commentary** sheet with every
+  comment and every big change still without one.
+
+**Move to another PC** (gear menu): Export writes one file in Documents\TQ Connector with the NetSuite
+connection (account, RESTlet address, client ID; never a secret), the licence, the logo, the saved filter sets,
+this workbook's layouts and its data tables. Import on the new PC shows what is in the file and applies what
+you tick; layouts are rebuilt in the open workbook. Then sign in with NetSuite on the new PC.
+
 ## 4. Data queries (any NetSuite data)
 
 The **Data tables** section of the Reports tab brings tables of NetSuite data into the workbook, not only ledger balances:

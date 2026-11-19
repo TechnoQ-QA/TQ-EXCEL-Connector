@@ -132,6 +132,71 @@ class MockTest(unittest.TestCase):
         self.assertAlmostEqual(sum(r["amount"] for r in rows), self.balance(**request), places=2)
 
 
+class CareTest(unittest.TestCase):
+    """Keeping the connector healthy and moving a setup between PCs (server/care.py)."""
+
+    def setUp(self):
+        import tempfile
+        self.care = server.care
+        self.dir = tempfile.mkdtemp()
+        self._docs = self.care.documents_dir
+        self.care.documents_dir = lambda: self.dir   # never write into the real Documents folder
+
+    def tearDown(self):
+        import shutil
+        self.care.documents_dir = self._docs
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_filter_sets(self):
+        prefs = self.care.Prefs(self.dir)
+        self.assertEqual(prefs.handle({"op": "get"})["filterSets"], [])
+        self.assertFalse(prefs.handle({"op": "saveSet", "name": "Empty", "cells": {}})["ok"])
+        out = prefs.handle({"op": "saveSet", "name": "Riyadh hotels", "cells": {"location": "Riyadh*", "x": "no"}})
+        self.assertEqual(out["filterSets"], [{"name": "Riyadh hotels", "cells": {"location": "Riyadh*"}}])
+        prefs.handle({"op": "saveSet", "name": "riyadh HOTELS", "cells": {"department": "Rooms"}})   # same name: replaced
+        self.assertEqual(len(prefs.handle({"op": "get"})["filterSets"]), 1)
+        self.assertEqual(prefs.handle({"op": "removeSet", "name": "Riyadh Hotels"})["filterSets"], [])
+
+    def test_secrets_never_leave(self):
+        cfg = {"accountId": "123", "consumerSecret": "s3", "tokenSecret": "t3", "consumerKey": "k",
+               "ai": {"apiKey": "sk-x", "model": "m"}, "_session": object(), "clientId": "public"}
+        clean = self.care.redact(cfg)
+        self.assertEqual(clean["accountId"], "123")
+        self.assertEqual(clean["clientId"], "public")
+        for k in ("consumerSecret", "tokenSecret", "consumerKey"):
+            self.assertEqual(clean[k], "***")
+        self.assertEqual(clean["ai"]["apiKey"], "***")
+        self.assertNotIn("_session", clean)
+        path = self.care.diagnostics(self.dir, "9.9", {"mode": "x"}, cfg, os.path.join(self.dir, "none.crt"),
+                                     open_folder=False)
+        import zipfile
+        with zipfile.ZipFile(path) as z:
+            text = "".join(z.read(n).decode() for n in z.namelist())
+        for secret in ("s3", "t3", "sk-x"):
+            self.assertNotIn('"%s"' % secret, text)
+
+    def test_export_and_read_back(self):
+        cfg = {"accountId": "123_SB1", "restletUrl": "https://x", "clientId": "c", "consumerSecret": "never"}
+        path, summary = self.care.export_bundle(cfg, '{"customer": "A"}', (b"\x89PNG\r\n\x1a\nabc", "image/png"),
+                                                {"filterSets": [{"name": "A", "cells": {"location": "B"}}]},
+                                                [{"lines": [], "title": "Hotel"}, {"bad": 1}], [{"rows": [["a"]]}], "1.4.0", "Hotel A")
+        self.assertEqual(summary, {"settings": True, "licence": True, "logo": True, "filterSets": 1, "layouts": 1, "queries": 1})
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        self.assertNotIn("never", text)
+        bundle = self.care.read_bundle(json.loads(text))
+        self.assertEqual(bundle["settings"]["accountId"], "123_SB1")
+        with self.assertRaises(ValueError):
+            self.care.read_bundle({"kind": "something else"})
+
+    def test_certificate_expiry(self):
+        cert, key, _ = server.tqcrypto.make_certificate(days=30)
+        path = os.path.join(self.dir, "c.crt")
+        with open(path, "w", encoding="ascii") as f:
+            f.write(cert)
+        self.assertIn(self.care.cert_days_left(path), (29, 30, 31))
+
+
 class HttpTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -182,7 +247,7 @@ class HttpTest(unittest.TestCase):
                          {"ok": True, "mode": "sample", "chat": True, "ai": False, "version": server.VERSION,
                           "licence": None, "configured": False, "seats": None, "update": None,
                           "signIn": {"mode": "sample"}})
-        for name in ("taskpane.html", "setup.html", "panel.css", "nav.js", "library.js", "drill.html", "shortcuts.json", "functions.js", "chat.js", "designer.js", "data.js", "functions.json", "manifest.xml",
+        for name in ("taskpane.html", "setup.html", "panel.css", "nav.js", "library.js", "extras.js", "drill.html", "shortcuts.json", "functions.js", "chat.js", "designer.js", "data.js", "functions.json", "manifest.xml",
                      "assets/icon-32.png"):
             with urllib.request.urlopen(self.base + "/" + name, timeout=10) as response:
                 self.assertEqual(response.status, 200, name)
@@ -479,6 +544,52 @@ class LayoutTest(unittest.TestCase):
 
     def ask(self, message, rows=LAYOUT, last=None):
         return self.chat.handle({"message": message, "context": self.context(rows, last)})
+
+    def test_hospitality_and_planning_templates(self):
+        """Hotel (USALI) from the customer's departments, restaurant, rolling forecast, last 12 months."""
+        saved = dict(server.MOCK_SEGMENTS)
+        server.MOCK_SEGMENTS["department"] = ["11 Rooms Division", "22 Food & Beverage", "22 Food & Beverage : Kitchen",
+                                              "33 Spa", "55 A&G", "77 Sales and Marketing", "88 Repair and Maintenance"]
+        try:
+            ledger = new_ledger()
+            chat = server.chat_module.ChatService(ledger)
+            wiz = lambda t: chat.design({"op": "wizard", "args": {"template": t, "month": "Oct 2026"},  # noqa: E731
+                                         "context": {"layouts": [], "sheets": []}})
+            hotel = wiz("hotel")
+            self.assertTrue(hotel["ok"], hotel.get("error"))
+            layout = [a for a in hotel["actions"] if a["sheetName"].startswith("TQ Layout")][0]
+            sources = [r[3] for r in layout["rows"] if len(r) > 3 and isinstance(r[3], str)]
+            self.assertIn("type:Income,OthIncome | Department: 11 Rooms Division*", sources)
+            self.assertIn("type:Expense,COGS | Department: 55 A&G*", sources)
+            report = [a for a in hotel["actions"] if a["sheetName"] == "Hotel P&L"][0]
+            flat = json.dumps(report["rows"])
+            self.assertIn("Department: 22 Food & Beverage*", flat)   # the line's filter reaches TQ.BALANCE
+            self.assertIn("Gross Operating Profit", flat)
+            self.assertIn("RevPAR", hotel["reply"])                   # no room statistics in the sample: said so
+            parsed = server.chat_module.layouts.parse(layout["sheetName"], layout["rows"])
+            rooms = [l for l in parsed["lines"] if l["label"] == "Rooms Revenue"][0]
+            self.assertEqual((rooms["source"], rooms["filter"]), ("type:Income,OthIncome", "Department: 11 Rooms Division*"))
+            for t, title in (("restaurant", "Restaurant P&L"), ("forecast", "Rolling Forecast"), ("rolling12", "Last 12 Months")):
+                out = wiz(t)
+                self.assertTrue(out["ok"], (t, out.get("error")))
+                self.assertTrue(any(a["sheetName"] == title for a in out["actions"]), t)
+            fc = [a for a in wiz("forecast")["actions"] if a["sheetName"].startswith("TQ Layout")][0]
+            self.assertIn("budget(Budget - A)", json.dumps(fc["rows"]))
+        finally:
+            server.MOCK_SEGMENTS.clear()
+            server.MOCK_SEGMENTS.update(saved)
+
+    def test_comment_needed_marking(self):
+        made = self.chat.design({"op": "wizard", "args": {"template": "monthytd", "month": "Oct 2026", "comments": True},
+                                 "context": {"layouts": [], "sheets": []}})
+        layout = [a for a in made["actions"] if a["sheetName"].startswith("TQ Layout")][0]
+        rows = [r if r[:1] != ["Comment needed over"] else ["Comment needed over", "10%"] for r in layout["rows"]]
+        context = {"layouts": [{"name": layout["sheetName"], "row": 0, "rows": rows}], "sheets": []}
+        out = self.chat.design({"op": "build", "args": {"layout": layout["sheetName"]}, "context": context})
+        report = [a for a in out["actions"] if not a["sheetName"].startswith("TQ Layout")][0]
+        marks = [c for c in report.get("conditional", []) if c.get("fill") == "#FFF4CE"]
+        self.assertEqual(len(marks), 1)
+        self.assertIn(">=0.1", marks[0]["formula"])
 
     def test_company_library_round_trip(self):
         """Save a layout to the library, then use it in another workbook: same lines, new names, report built."""
@@ -833,7 +944,7 @@ class LayoutTest(unittest.TestCase):
 
     def test_templates_build_reports(self):
         listed = self.chat.design({"op": "templates"})["templates"]
-        self.assertEqual([t["id"] for t in listed], ["monthytd", "management", "summary", "balance", "cashflow"])
+        self.assertEqual([t["id"] for t in listed], ["monthytd", "management", "summary", "balance", "cashflow", "hotel", "restaurant", "forecast", "rolling12"])
         for template in ("monthytd", "summary", "balance", "cashflow"):
             out = self.chat.design({"op": "new", "args": {"template": template}, "context": {"sheets": []}})
             self.assertTrue(out["ok"], out)

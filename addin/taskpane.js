@@ -121,16 +121,36 @@
             ? 'Connected to NetSuite account ' + ping.account + ' as ' + ping.user + (status.ai ? ' · AI add-on on' : '') : '';
           if (s.mode === 'oauth2' && s.signedIn && signOutItem) signOutItem.hidden = false;
           showUpdate(status.update);
+          showScriptVersion(status.mode === 'netsuite' ? ping.version : NEEDED_SCRIPT);
           status.ping = ping;
           return status;
         });
       })
       .catch(function (error) {
+        var down = /fetch|network|load failed/i.test(error.message) ? TQ.DOWN : error.message;
         $('dot').className = 'dot bad';
-        $('status').textContent = 'Not connected: ' + error.message;
-        return { error: error.message };
+        $('status').textContent = 'Not connected';
+        $('status').parentNode.title = down;
+        say(down, true);
+        return { error: down };
       });
     return window.TQStatus;
+  }
+
+  /* The TQ script in NetSuite this version of the add-in needs (the company library came with 7). An older one
+   * keeps working for reports; the panel says what to ask the administrator for. */
+  var NEEDED_SCRIPT = 7;
+  function showScriptVersion(found) {
+    var old = document.getElementById('scriptNotice');
+    if (old) old.remove();
+    if (!found || Number(found) >= NEEDED_SCRIPT) return;
+    var line = document.createElement('div');
+    line.id = 'scriptNotice';
+    line.className = 'banner warn';
+    line.textContent = 'NetSuite has TQ script version ' + found + '; this add-in needs ' + NEEDED_SCRIPT +
+      ' for everything to work (the company library and seats per person). Ask your NetSuite administrator to ' +
+      'deploy the TQ Excel Connector package again.';
+    $('banners').appendChild(line);
   }
 
   /* A newer signed version of the connector: one line with Install (the setup restarts the connector). */
