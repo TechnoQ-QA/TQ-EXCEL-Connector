@@ -10,14 +10,39 @@ WHICH = sys.argv[2] if len(sys.argv) > 2 else "install"
 BASE = "https://localhost:3000"
 os.makedirs(OUT, exist_ok=True)
 
+
+def _real_values():
+    """The signed-in user, the account, the licence's customer and this PC's name, read from the connector when the
+    script runs, so the pictures can swap them for example values (nothing personal is written in this file)."""
+    import json
+    import socket
+    import ssl
+    import urllib.request
+    ctx = ssl.create_default_context()
+    ctx.check_hostname, ctx.verify_mode = False, ssl.CERT_NONE
+    try:
+        with urllib.request.urlopen(BASE + "/api/status", timeout=10, context=ctx) as r:
+            st = json.loads(r.read().decode())
+    except OSError:
+        st = {}
+    lic = st.get("licence") or {}
+    return {"user": (st.get("signIn") or {}).get("user") or "", "account": lic.get("account") or "",
+            "customer": lic.get("customer") or "", "pc": socket.gethostname()}
+
+
+REAL = _real_values()
+
 SANITIZE = r"""
-() => {
-  const swap = (t) => t
-    .replace(/65987[_-]SB1/gi, '1234567')
-    .replace(/65987/g, '1234567')
-    .replace(/Zubair Salamat/g, 'Finance User')
-    .replace(/Techno Q \(sandbox\)/g, 'Your Company')
-    .replace(/TQ-1GF4774/g, 'FIN-PC-01')
+(real) => {
+  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pairs = [];
+  const acct = (real.account || '').split(/[_-]/)[0];
+  if (real.account) pairs.push([new RegExp(esc(real.account).replace(/[_-]/, '[_-]'), 'gi'), '1234567']);
+  if (acct) pairs.push([new RegExp(esc(acct), 'g'), '1234567']);
+  if (real.user) pairs.push([new RegExp(esc(real.user), 'g'), 'Finance User']);
+  if (real.customer) pairs.push([new RegExp(esc(real.customer), 'g'), 'Your Company']);
+  if (real.pc) pairs.push([new RegExp(esc(real.pc), 'gi'), 'FIN-PC-01']);
+  const swap = (t) => pairs.reduce((s, p) => s.replace(p[0], p[1]), t)
     .replace(/C:\\Users\\[^\\]+\\/g, 'C:\\Users\\finance.user\\');
   const walk = (n) => {
     if (n.nodeType === 3) { n.nodeValue = swap(n.nodeValue); return; }
@@ -44,9 +69,9 @@ SANITIZE = r"""
 
 
 def shot(page, name, full=False, clip=None):
-    page.evaluate(SANITIZE)
+    page.evaluate(SANITIZE, REAL)
     page.wait_for_timeout(1200)
-    page.evaluate(SANITIZE)
+    page.evaluate(SANITIZE, REAL)
     page.screenshot(path=os.path.join(OUT, name + ".png"), full_page=full, clip=clip)
     print("saved", name)
 
