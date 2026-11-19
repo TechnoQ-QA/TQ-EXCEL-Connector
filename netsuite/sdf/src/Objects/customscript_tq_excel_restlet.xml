@@ -1,0 +1,22 @@
+<restlet scriptid="customscript_tq_excel_restlet">
+  <description>TQ Excel Connector: what the Excel add-in calls. Runs as the caller's role; balances go through the elevated Suitelet.</description>
+  <isinactive>F</isinactive>
+  <name>TQ Excel Connector RESTlet</name>
+  <notifyadmins>F</notifyadmins>
+  <notifyemails></notifyemails>
+  <notifyowner>T</notifyowner>
+  <notifyuser>F</notifyuser>
+  <scriptfile>[/SuiteScripts/TQ Excel Connector/tq_excel_restlet.js]</scriptfile>
+  <scriptdeployments>
+    <scriptdeployment scriptid="customdeploy_tq_excel_restlet">
+      <allemployees>F</allemployees>
+      <allpartners>F</allpartners>
+      <allroles>T</allroles>
+      <audslctrole></audslctrole>
+      <isdeployed>T</isdeployed>
+      <loglevel>ERROR</loglevel>
+      <status>RELEASED</status>
+      <title>TQ Excel Connector RESTlet</title>
+    </scriptdeployment>
+  </scriptdeployments>
+</restlet>

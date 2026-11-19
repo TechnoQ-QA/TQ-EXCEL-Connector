@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TQ Connector</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <style>
+    :root { --ink: #1f2933; --muted: #5f6b7a; --line: #d9dee5; --accent: #0b5cad; --bad: #b3261e; --ok: #1a7f4b; --soft: #f6f8fa; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { margin: 0; padding: 14px; font: 13px/1.45 "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #fff; display: flex; flex-direction: column; }
+    h1 { font-size: 16px; margin: 0 0 6px; }
+    h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 18px 0 8px; }
+    p { margin: 0 0 8px; }
+    .status { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+    .dot.ok { background: var(--ok); }
+    .dot.bad { background: var(--bad); }
+    .row { display: flex; flex-wrap: wrap; gap: 6px; }
+    button { font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--soft); color: var(--ink); cursor: pointer; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button:disabled { opacity: .55; cursor: default; }
+    #message { min-height: 18px; margin-top: 10px; color: var(--muted); }
+    #message.bad { color: var(--bad); }
+    code { display: block; padding: 6px 8px; background: var(--soft); border-radius: 5px; font: 12px Consolas, monospace; overflow-wrap: anywhere; }
+    .table-wrap { max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+    table { border-collapse: collapse; width: 100%; font-size: 12px; }
+    th, td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+    th { position: sticky; top: 0; background: var(--soft); }
+    td.num, th.num { text-align: right; }
+    tr.clickable { cursor: pointer; }
+    tr.clickable:hover td, tr.clickable:focus td { background: var(--soft); }
+    [hidden] { display: none !important; }
+    .card { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-top: 10px; background: #fbfcfd; }
+    .card h3 { margin: 0 0 4px; font-size: 14px; }
+    .card .big { display: block; width: 100%; padding: 9px; margin-top: 6px; font-weight: 600; text-align: left; }
+    .choices button { display: block; width: 100%; text-align: left; margin-top: 6px; padding: 8px; }
+    .choices button.on { border-color: var(--accent); background: #e8f0fb; }
+    .choices small { display: block; color: var(--muted); font-weight: normal; }
+    .steps { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+    .ico { width: 16px; height: 16px; vertical-align: -3px; margin-right: 5px; }
+    button.primary .ico { background: #fff; border-radius: 3px; padding: 1px; }
+
+    .tabs { display: flex; gap: 4px; margin: 12px 0 0; border-bottom: 1px solid var(--line); }
+    .tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); padding: 6px 12px; }
+    .tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+    #chatTab { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+    .section { margin-top: 10px; }
+    .section > summary { font-size: 13px; }
+    .section[open] > summary { margin-bottom: 4px; }
+    #chatLog { flex: 1; min-height: 120px; overflow-y: auto; padding: 10px 0; display: flex; flex-direction: column; gap: 8px; }
+    .bubble { max-width: 92%; padding: 7px 10px; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .bubble.user { align-self: flex-end; background: var(--accent); color: #fff; }
+    .bubble.assistant { align-self: flex-start; background: var(--soft); border: 1px solid var(--line); }
+    .bubble.note { align-self: flex-start; color: var(--muted); font-size: 12px; padding: 0 2px; }
+    .bubble.error { align-self: flex-start; color: var(--bad); border: 1px solid var(--bad); }
+    .hint { color: var(--muted); }
+    .hint button { display: block; width: 100%; text-align: left; margin-top: 6px; }
+    .composer { display: flex; gap: 6px; align-items: flex-end; border-top: 1px solid var(--line); padding-top: 8px; }
+    .composer textarea { flex: 1; font: inherit; color: var(--ink); resize: none; height: 56px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 5px; }
+    .composer div { display: flex; flex-direction: column; gap: 4px; }
+
+    .form { overflow: auto; flex: 1; min-height: 0; }
+    .form input[type="text"], .form select, .form textarea { font: inherit; color: var(--ink); padding: 5px 6px; border: 1px solid var(--line); border-radius: 5px; min-width: 0; }
+    .form textarea { width: 100%; font: 12px Consolas, monospace; resize: vertical; }
+    .form .row > input[type="text"], .form .row > select { flex: 1; }
+    .form label { display: block; margin: 6px 0 2px; color: var(--muted); font-size: 12px; }
+    .form label.check { color: var(--ink); font-size: 13px; }
+    .form .field { width: 100%; }
+    .status-line { min-height: 18px; margin: 8px 0 0; color: var(--muted); white-space: pre-wrap; }
+    .status-line.bad { color: var(--bad); }
+    .fieldrow { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
+    .fieldrow label.check { flex: 1; margin: 0; overflow: hidden; text-overflow: ellipsis; }
+    .fieldrow select { padding: 1px 4px; font-size: 12px; }
+    .pick.tall { max-height: 190px; border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; }
+    .items { border: 1px solid var(--line); border-radius: 6px; max-height: 230px; overflow: auto; }
+    .items .group { padding: 3px 8px; background: var(--soft); font-weight: 600; font-size: 12px; }
+    .items .item { display: flex; align-items: center; gap: 4px; padding: 3px 4px 3px 8px; border-top: 1px solid var(--line); }
+    .items .item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .items .item small { color: var(--muted); }
+    .items .item button { padding: 0 6px; line-height: 20px; }
+    .items .empty { padding: 8px; color: var(--muted); }
+    details { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin-top: 8px; }
+    details summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+    .pick { max-height: 120px; overflow: auto; margin-top: 4px; }
+    .pick button, .chips button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 2px 4px; border-radius: 3px; }
+    .pick button:hover, .chips button:hover { background: var(--soft); }
+    .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+    .chips button { width: auto; border: 1px solid var(--line); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1><img id="brandLogo" src="/logo" alt="" style="max-height:28px;max-width:140px;vertical-align:middle;margin-right:8px" onerror="this.style.display='none'" />TQ Connector for NetSuite</h1>
+  <div class="status"><span id="dot" class="dot"></span><span id="status" style="flex:1">Connecting…</span><a href="setup.html" id="setupLink" title="NetSuite connection, licence and AI add-on">Setup</a></div>
+
+  <div class="tabs" role="tablist">
+    <button id="tabReports" role="tab" aria-selected="true" aria-controls="reportsTab"><img src="assets/icon-panel-16.png" alt="" class="ico" />Reports</button>
+    <button id="tabChat" role="tab" aria-selected="false" aria-controls="chatTab"><img src="assets/icon-chat-16.png" alt="" class="ico" />Chat</button>
+  </div>
+
+  <section id="reportsTab" class="form" role="tabpanel" aria-labelledby="tabReports">
+    <div id="homeCard" class="card"></div>
+    <section id="wizard" class="card" hidden></section>
+    <div class="toolbar">
+      <button id="refresh" class="primary" title="Recalculate every TQ formula in the workbook">Refresh all</button>
+      <button id="refreshSheet" title="Recalculate only the active sheet">Refresh this sheet</button>
+      <button id="refreshSelection" title="Recalculate only the selected cells">Refresh selection</button>
+      <button id="drill" title="Show the accounts or transactions behind the selected cell">Drill down</button>
+    </div>
+    <div id="message"></div>
+
+    <section id="drillSection" hidden>
+      <h2 id="drillTitle">Transactions</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Number</th><th>Type</th><th>Name</th><th>Memo</th><th class="num">Amount</th></tr></thead>
+          <tbody id="drillBody"></tbody>
+        </table>
+      </div>
+      <p style="margin-top:8px"><button id="drillToSheet">Send to new sheet</button> <button id="drillClose">Close</button></p>
+    </section>
+
+    <details class="section" id="secFilters" open>
+      <summary>Filters</summary>
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <span class="hint">On the active report sheet</span>
+        <button id="fRead" title="Read the filters of the active sheet again">Read again</button>
+      </div>
+      <div id="fCurrent" class="items" style="margin-top:4px"></div>
+      <label for="fField">Add a filter on</label>
+      <select class="field" id="fField"></select>
+      <input type="text" class="field" id="fSearch" placeholder="Search the values…" aria-label="Search the values" style="margin-top:4px" />
+      <div id="fValues" class="pick tall"></div>
+      <input type="text" class="field" id="fTyped" placeholder="or type values, separated by commas" aria-label="Values typed" style="margin-top:4px" />
+      <div id="fUnderBox"><label class="check"><input type="checkbox" id="fUnder" /><span> With everything under it</span></label></div>
+      <label class="check"><input type="checkbox" id="fExclude" /> Leave these out instead</label>
+      <div class="row" style="margin-top:6px">
+        <button id="fApply" class="primary">Apply to this sheet</button>
+        <button id="fKeep" title="Save the filter in the layout, so it stays when the report is rebuilt">Keep in the layout</button>
+        <button id="fDropdown" title="Add a row with a dropdown of this field's values to the report (E4:F7)">Add as a dropdown on the sheet</button>
+        <button id="fClear">Clear all</button>
+      </div>
+      <div id="fMessage" class="status-line" aria-live="polite"></div>
+    </details>
+
+    <details class="section" id="secLayout" open>
+      <summary>Report layout</summary>
+    <div class="row">
+      <select id="dLayout" aria-label="Layout sheet"></select>
+      <button id="dReload" title="Read the layout sheet again">Reload</button>
+    </div>
+    <h2>New layout</h2>
+    <label for="dTemplate">Start from</label>
+    <select class="field" id="dTemplate">
+      <option value="management">Management P&amp;L, account by account</option>
+    </select>
+    <div id="dTemplateAbout" class="hint"></div>
+    <div id="dSourceBox" hidden>
+      <label for="dSource">Sheet that holds your format</label>
+      <select class="field" id="dSource"></select>
+      <div class="hint">Type the report's lines in one column, one per row, the way you want them to appear.
+        Account numbers in a column next to the names (4000, 4100-4199) make the match exact; without them
+        the names are matched to account names and groups such as Sales or Expenses.</div>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <input type="text" id="dNewName" placeholder="Name (optional)" aria-label="New layout name" />
+      <button id="dNew">Create</button>
+    </div>
+    <div id="dMessage" class="status-line" aria-live="polite"></div>
+
+    <div id="dBody" hidden>
+      <h2>Report title</h2>
+      <div class="row">
+        <input type="text" id="dTitle" aria-label="Report title" />
+        <button id="dTitleSave">Save</button>
+      </div>
+
+      <h2>Sheets</h2>
+      <label for="dPages">Besides the summary sheet, make one sheet for each</label>
+      <select class="field" id="dPages">
+        <option value="">(summary sheet only)</option>
+        <option value="location">Location</option>
+        <option value="department">Department</option>
+        <option value="class">Class</option>
+        <option value="subsidiary">Subsidiary</option>
+      </select>
+
+      <label class="check" style="margin-top:8px"><input type="checkbox" id="dDetail" /> List the GL accounts under each line</label>
+      <label class="check"><input type="checkbox" id="dComments" /> Comments column (kept when the report is rebuilt)</label>
+      <label for="dHighlight">Highlight change % over (green above, red below minus)</label>
+      <select class="field" id="dHighlight">
+        <option value="">No highlights</option><option value="5">5%</option><option value="10">10%</option>
+        <option value="15">15%</option><option value="20">20%</option><option value="25">25%</option><option value="50">50%</option>
+      </select>
+      <details id="rForm">
+        <summary>Your own highlight rules</summary>
+        <div id="rList" class="items" style="margin-top:4px"></div>
+        <label for="rTarget">Which lines</label>
+        <input type="text" class="field" id="rTarget" placeholder="all, 6100, 4000-4999, type:Expense or a line name such as Net Profit" />
+        <label for="rColumn">Which column</label>
+        <select class="field" id="rColumn"></select>
+        <label for="rOp">When the amount (as shown) is</label>
+        <div class="row">
+          <select id="rOp" aria-label="Condition">
+            <option value=">">above</option><option value="<">below</option><option value=">=">at least</option>
+            <option value="<=">at most</option><option value="between">between</option>
+          </select>
+          <input type="text" id="rV1" placeholder="5000 or 10%" size="9" aria-label="Value" />
+          <input type="text" id="rV2" placeholder="and" size="9" aria-label="Second value" hidden />
+        </div>
+        <label for="rColour">Colour</label>
+        <select class="field" id="rColour">
+          <option>red</option><option>yellow</option><option>amber</option><option>green</option><option>blue</option><option>grey</option>
+        </select>
+        <p style="margin-top:6px"><button id="rAdd" class="primary">Add rule</button></p>
+      </details>
+
+      <h2>Lines (rows)</h2>
+      <div id="dLines" class="items"></div>
+      <details id="lForm">
+        <summary>Add a line</summary>
+        <label for="lSection">Section</label>
+        <input type="text" class="field" id="lSection" list="lSections" placeholder="e.g. Staff Cost" />
+        <datalist id="lSections"></datalist>
+        <label for="lLabel">Line name</label>
+        <input type="text" class="field" id="lLabel" />
+        <label for="lKind">What it shows</label>
+        <select class="field" id="lKind">
+          <option value="accounts">Accounts added together</option>
+          <option value="subtotal">Subtotal of the section's account lines</option>
+          <option value="formula">Formula from other lines</option>
+        </select>
+        <div id="lAccountsBox">
+          <label for="lSource">Accounts</label>
+          <input type="text" class="field" id="lSource" placeholder="4000, 4100-4199 or type:Income" />
+          <input type="text" class="field" id="lSearch" placeholder="Search accounts to add…" aria-label="Search accounts" style="margin-top:4px" />
+          <div id="lResults" class="pick"></div>
+          <label class="check"><input type="checkbox" id="lNegative" /> Show as a negative (costs)</label>
+        </div>
+        <div id="lFormulaBox" hidden>
+          <label for="lFormula">Formula</label>
+          <input type="text" class="field" id="lFormula" placeholder="=[Net Sales]+[Total Cost of Sales]" />
+          <div id="lRefs" class="chips"></div>
+        </div>
+        <label for="lFormat">Format</label>
+        <select class="field" id="lFormat">
+          <option value="">Number</option>
+          <option value="percent">Percent</option>
+          <option value="integer">Whole number</option>
+          <option value="bold">Number, bold</option>
+        </select>
+        <p style="margin-top:8px"><button id="lAdd" class="primary">Add line</button></p>
+      </details>
+
+      <h2>Columns</h2>
+      <div id="dColumns" class="items"></div>
+      <details id="cForm">
+        <summary>Add a column</summary>
+        <label for="cLabel">Column name</label>
+        <input type="text" class="field" id="cLabel" placeholder="e.g. YTD 2026" />
+        <label for="cType">What it shows</label>
+        <select class="field" id="cType">
+          <option value="period">Balances for a period</option>
+          <option value="formula">Formula from other columns</option>
+          <option value="total">Total of other columns</option>
+        </select>
+        <div id="cPeriodBox">
+          <label for="cFrom">From period</label>
+          <select class="field" id="cFrom"></select>
+          <label for="cTo">To period</label>
+          <select class="field" id="cTo"></select>
+          <div id="cFilters"></div>
+          <label class="check"><input type="checkbox" id="cBudget" /> Show the budget, not the actual amounts</label>
+        </div>
+        <div id="cFormulaBox" hidden>
+          <label for="cFormula">Formula</label>
+          <input type="text" class="field" id="cFormula" placeholder="=[YTD 2026]-[YTD 2025]" />
+          <div id="cRefs" class="chips"></div>
+        </div>
+        <label for="cFormat">Format</label>
+        <select class="field" id="cFormat">
+          <option value="">Number</option>
+          <option value="percent">Percent</option>
+        </select>
+        <p style="margin-top:8px"><button id="cAdd" class="primary">Add column</button></p>
+      </details>
+
+      <p style="margin-top:12px"><button id="dBuild" class="primary">Update report</button></p>
+      <p class="hint">The layout is kept on its own sheet in this workbook, so it is saved with the file and can be copied to another workbook. You can also edit that sheet directly, or use the chat: "add column Q1 2025".</p>
+    </div>
+    </details>
+
+    <details class="section" id="secData">
+      <summary>Data tables from NetSuite</summary>
+    <div id="qList" class="items"></div>
+    <p style="margin-top:8px"><button id="qRefresh" class="primary">Refresh data</button></p>
+    <div id="qMessage" class="status-line" aria-live="polite"></div>
+
+    <details>
+      <summary>Start from a ready-made query</summary>
+      <label for="qTemplate">Query</label>
+      <select class="field" id="qTemplate"></select>
+      <p id="qTemplateNote" class="hint" style="margin-top:6px"></p>
+      <p style="margin-top:6px"><button id="qTemplateUse" class="primary">Use this query</button></p>
+    </details>
+
+    <details>
+      <summary>Add a NetSuite saved search</summary>
+      <div class="row" style="margin-top:6px">
+        <input type="text" id="qSearchText" placeholder="Part of its name, e.g. invoice" aria-label="Find a saved search" />
+        <button id="qSearchGo">Find</button>
+      </div>
+      <div id="qSearchResults" class="pick tall" style="margin-top:6px"></div>
+    </details>
+
+    <details>
+      <summary>Build a query from NetSuite records</summary>
+      <label for="qTable">Record</label>
+      <select class="field" id="qTable"></select>
+      <input type="text" class="field" id="qTableOther" placeholder="or type any table name, e.g. customrecord_x" aria-label="Other table name" style="margin-top:4px" />
+      <label>Fields to bring</label>
+      <div id="qFields" class="pick tall"></div>
+      <p style="margin-top:4px"><button id="qMoreFields">Read all fields of this record</button></p>
+      <label for="qJoin">Also bring fields from a linked record</label>
+      <select class="field" id="qJoin"></select>
+      <div id="qJoinFields" class="pick tall" style="margin-top:4px" hidden></div>
+      <label for="qFilterField1">Only rows where</label>
+      <div class="row">
+        <select id="qFilterField1" aria-label="First filter field"></select>
+        <select id="qFilterOp1" aria-label="First filter test">
+          <option value="=">is</option><option value="&lt;&gt;">is not</option><option value="contains">contains</option>
+          <option value="starts">starts with</option><option value="&gt;=">is at least</option><option value="&lt;=">is at most</option>
+          <option value="in">is one of (a, b)</option><option value="empty">is empty</option><option value="notempty">is not empty</option>
+        </select>
+        <input type="text" id="qFilterValue1" placeholder="value or {parameter}" aria-label="First filter value" />
+      </div>
+      <div class="row" style="margin-top:4px">
+        <select id="qFilterField2" aria-label="Second filter field"></select>
+        <select id="qFilterOp2" aria-label="Second filter test">
+          <option value="=">is</option><option value="&lt;&gt;">is not</option><option value="contains">contains</option>
+          <option value="starts">starts with</option><option value="&gt;=">is at least</option><option value="&lt;=">is at most</option>
+          <option value="in">is one of (a, b)</option><option value="empty">is empty</option><option value="notempty">is not empty</option>
+        </select>
+        <input type="text" id="qFilterValue2" placeholder="value or {parameter}" aria-label="Second filter value" />
+      </div>
+      <label for="qSort">Sort by</label>
+      <select class="field" id="qSort"></select>
+      <label class="check"><input type="checkbox" id="qDesc" /> Largest or latest first</label>
+      <p style="margin-top:8px"><button id="qCompose" class="primary">Write the query</button></p>
+    </details>
+
+    <details id="qSqlForm">
+      <summary>Query text (SuiteQL)</summary>
+      <label for="qName">Query name (also its sheet name)</label>
+      <input type="text" class="field" id="qName" />
+      <label for="qSql">Query</label>
+      <textarea id="qSql" rows="8" spellcheck="false" placeholder="SELECT id, companyname FROM customer"></textarea>
+      <label for="qMax">Most rows to bring (up to 20000)</label>
+      <input type="text" class="field" id="qMax" value="5000" />
+      <p style="margin-top:8px"><button id="qSave" class="primary">Add and run</button></p>
+    </details>
+
+    <details>
+      <summary>Parameters</summary>
+      <div id="qParams" class="items" style="margin-top:6px"></div>
+      <div class="row" style="margin-top:6px">
+        <input type="text" id="pName" placeholder="name, e.g. from" aria-label="Parameter name" />
+        <input type="text" id="pValue" placeholder="value, e.g. 2026-01-01" aria-label="Parameter value" />
+        <button id="pSave">Save</button>
+      </div>
+    </details>
+    <p class="hint" style="margin-top:10px">Each query fills its own sheet and is listed on the "TQ Queries" sheet, so it is saved with the workbook. You see only the records your NetSuite role can see.</p>
+    </details>
+
+    <details class="section" id="secCharts">
+      <summary>Dashboards and charts</summary>
+      <p class="hint">A dashboard sheet: tiles for the key figures and Excel charts over live NetSuite numbers. It
+        has the same month cell (B8) and filters as a report, so it rolls forward and filters the same way.</p>
+      <div class="row">
+        <button id="dash-executive" class="primary"><img src="assets/icon-dashboard-16.png" alt="" class="ico" />Executive</button>
+        <button id="dash-sales">Sales</button>
+        <button id="dash-cash">Cash</button>
+      </div>
+      <label>Finance</label>
+      <div class="row">
+        <button id="dash-pl">Profit and loss</button>
+        <button id="dash-position">Financial position</button>
+        <button id="dash-budget">Budget vs actual</button>
+      </div>
+      <h2>Chart the selection</h2>
+      <p class="hint">Select cells on any sheet (names in the first row or column, numbers in the rest), then:</p>
+      <div class="row">
+        <select id="cChartType" aria-label="Chart type">
+          <option value="ColumnClustered">Columns</option><option value="BarClustered">Bars</option>
+          <option value="Line">Line</option><option value="Pie">Pie</option><option value="Doughnut">Doughnut</option>
+          <option value="Area">Area</option>
+        </select>
+        <input type="text" id="cChartTitle" placeholder="Chart title" aria-label="Chart title" />
+        <button id="cChart" class="primary">Add chart</button>
+      </div>
+      <div id="cMessage" class="status-line" aria-live="polite"></div>
+    </details>
+
+    <details class="section" id="secPack">
+      <summary>Send the report</summary>
+      <p class="hint">For people without the add-in: a copy with the numbers fixed as values, and pages set up for
+        a PDF. Open the report (or its summary) first.</p>
+      <label class="check"><input type="checkbox" id="pWhole" checked /> The whole pack: the report, its summary and its location sheets</label>
+      <label class="check"><input type="checkbox" id="pLogo" checked /> Company logo and name from NetSuite (the subsidiary's, for a one-subsidiary report)</label>
+      <div class="row" style="margin-top:6px">
+        <button id="pValues" class="primary" title="Copies the sheets with every formula replaced by its value">Copy as values</button>
+        <button id="pPrint" title="Landscape, fit to one page wide, headings repeated on every page, page numbers">Set up for PDF</button>
+      </div>
+      <div id="pMessage" class="status-line" aria-live="polite"></div>
+    </details>
+
+    <details class="section" id="secBudget">
+      <summary>Budget upload</summary>
+      <p class="hint">Make a budget sheet (accounts down, the year's months across), change the numbers in Excel,
+        then send them to NetSuite. Check first: it writes nothing.</p>
+      <label for="gYear">Fiscal year</label>
+      <select class="field" id="gYear"></select>
+      <label for="gCategory">Budget category</label>
+      <select class="field" id="gCategory"></select>
+      <label class="check"><input type="checkbox" id="gFill" checked /> Start from last year's actuals</label>
+      <div class="row" style="margin-top:6px">
+        <button id="gMake">Make budget sheet</button>
+      </div>
+      <h2>On the budget sheet</h2>
+      <div class="row">
+        <button id="gCheck" class="primary">Check</button>
+        <button id="gUpload" disabled title="Check the sheet first">Upload to NetSuite</button>
+      </div>
+      <div id="gMessage" class="status-line" aria-live="polite"></div>
+    </details>
+
+    <details class="section" id="secJournal">
+      <summary>Journal upload</summary>
+      <p class="hint">Fill journal lines on a sheet; rows with the same Entry number become one journal entry. Check
+        first: it writes nothing and says what is wrong.</p>
+      <div class="row"><button id="jMake">Make journal sheet</button></div>
+      <h2>On the journal sheet</h2>
+      <div class="row">
+        <button id="jCheck" class="primary">Check</button>
+        <button id="jUpload" disabled title="Check the sheet first">Upload to NetSuite</button>
+      </div>
+      <div id="jMessage" class="status-line" aria-live="polite"></div>
+    </details>
+
+    <details class="section" id="secFormula">
+      <summary>Insert a formula</summary>
+      <p class="hint">Pick what the cell should show; the formula is written into the selected cell. Select a cell
+        that already has one and press Read selected cell to change it.</p>
+      <label for="bAccount">Account or total</label>
+      <input type="text" class="field" id="bAccount" placeholder="4000, 4000-4999, type:Income, calc:NetIncome" />
+      <input type="text" class="field" id="bSearch" placeholder="Search accounts…" aria-label="Search accounts" style="margin-top:4px" />
+      <div id="bResults" class="pick"></div>
+      <div class="row" style="margin-top:4px">
+        <button data-total="type:Income">Income</button><button data-total="type:COGS">Cost of sales</button>
+        <button data-total="type:Expense">Expenses</button><button data-total="calc:NetIncome">Net income</button>
+        <button data-total="type:Bank">Bank</button>
+      </div>
+      <label for="bFrom">Period</label>
+      <select class="field" id="bFrom"></select>
+      <label for="bTo">To period (for a range)</label>
+      <select class="field" id="bTo"></select>
+      <div id="bSegments"></div>
+      <label for="bOther">Other filters (optional)</label>
+      <input type="text" class="field" id="bOther" placeholder="e.g. Brand: Premium; Name: Al Noor" />
+      <label class="check"><input type="checkbox" id="bBudget" /> The budget, not the actual amount</label>
+      <label class="check"><input type="checkbox" id="bLink" /> Take the period from cell <input type="text" id="bCell" value="B8" size="5" aria-label="Period cell" /> (rolls forward with it)</label>
+      <label>Formula</label>
+      <code id="bPreview"></code>
+      <div class="row" style="margin-top:6px">
+        <button id="bInsert" class="primary">Insert in selected cell</button>
+        <button id="bRead">Read selected cell</button>
+      </div>
+      <div id="bMessage" class="status-line" aria-live="polite"></div>
+    </details>
+
+    <details class="section" id="secMore">
+      <summary>Lists and formulas</summary>
+      <h2>Insert a list at the selected cell</h2>
+      <div class="row">
+        <button data-list="accounts">Accounts</button>
+        <button data-list="periods">Periods</button>
+        <button data-list="subsidiary">Subsidiaries</button>
+        <button data-list="department">Departments</button>
+        <button data-list="class">Classes</button>
+        <button data-list="location">Locations</button>
+      </div>
+      <h2>Formulas</h2>
+      <code>=TQ.BALANCE(account, fromPeriod, [toPeriod], [subsidiary], [department], [class], [location], [filters])</code>
+      <p style="margin-top:6px"><code>=TQ.ACCOUNTNAME(account)</code></p>
+      <p style="margin-top:6px"><code>=TQ.PERIOD(period, [shift])</code></p>
+      <p style="margin-top:6px">Periods can be relative: <code>CM</code> (this month) <code>CM-1</code> (last month) <code>LY</code> (same month last year) <code>FYS</code> / <code>FYE</code> (first / last month of the year) <code>QS</code> <code>QE</code> <code>FYS-12</code> (start of last year). Year to date: from <code>FYS</code> to <code>CM</code>. With a month cell: <code>=TQ.PERIOD($B$8,"FYS")</code>.</p>
+      <p style="margin-top:6px">Totals work as the account: <code>type:Income</code> <code>type:Bank,AcctRec</code> <code>calc:NetIncome</code> <code>calc:NetIncomeYTD</code> <code>calc:RetainedEarnings</code> <code>4000, 4100-4199</code> <code>calc:Days</code></p>
+      <p style="margin-top:6px">Filters: <code>Sales, Bar</code> <code>not Sales</code> <code>Food*</code> (with everything under it) <code>Parent*</code> (subsidiary, consolidated) <code>Brand: Premium; Name: Al Noor</code></p>
+    </details>
+  </section>
+
+  <section id="chatTab" role="tabpanel" aria-labelledby="tabChat" hidden>
+    <div id="chatLog" aria-live="polite">
+      <div id="chatHint" class="hint">
+        Ask for a report or a number and it is written into your workbook. Then change it with a short follow-up such as "by quarter", "add column Q1 2025" or "summary". Build your own format in the Reports tab. For example:
+        <button data-example="P&amp;L for this year by month">P&amp;L for this year by month</button>
+        <button data-example="Balance sheet as at last month vs last year">Balance sheet as at last month vs last year</button>
+        <button data-example="P&amp;L this year by department, summary">P&amp;L this year by department, summary</button>
+        <button data-example="Trial balance last month">Trial balance last month</button>
+        <button data-example="create layout">Create a layout for my own report format</button>
+        <button data-example="custom P&amp;L for this year by month">Custom P&amp;L for this year by month</button>
+        <button data-example="help">Show everything I understand</button>
+      </div>
+    </div>
+    <div class="composer">
+      <textarea id="chatInput" placeholder="e.g. P&amp;L for 2026 by quarter vs last year" aria-label="Message"></textarea>
+      <div>
+        <button id="chatSend" class="primary">Send</button>
+        <button id="chatAttach" title="Attach a screenshot of a report format (needs the AI add-on). You can also paste a picture into the message box.">Picture</button>
+        <button id="chatNew" title="Start a new conversation">New</button>
+      </div>
+      <input type="file" id="chatFile" accept="image/png,image/jpeg,image/gif,image/webp" hidden />
+    </div>
+    <div id="chatAttachment" class="status-line" hidden>
+      <span id="chatAttachmentName"></span>
+      <button id="chatAttachmentRemove" title="Remove the picture" aria-label="Remove the picture">&#10005;</button>
+    </div>
+  </section>
+
+  <script src="functions.js"></script>
+  <script src="taskpane.js"></script>
+  <script src="chat.js"></script>
+  <script src="designer.js"></script>
+  <script src="data.js"></script>
+  <script src="filters.js"></script>
+  <script src="builder.js"></script>
+  <script src="pack.js"></script>
+  <script src="budget.js"></script>
+  <script src="home.js"></script>
+</body>
+</html>

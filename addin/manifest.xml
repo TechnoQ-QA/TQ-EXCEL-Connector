@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+           xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+           xsi:type="TaskPaneApp">
+  <Id>6f1c2a9e-3b7d-4e58-9a41-c2d07b5e8f13</Id>
+  <Version>1.1.2.0</Version>
+  <ProviderName>Techno Q</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="TQ Connector for NetSuite"/>
+  <Description DefaultValue="Live NetSuite balances in Excel formulas."/>
+  <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png?v=112"/>
+  <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-64.png?v=112"/>
+  <SupportUrl DefaultValue="https://localhost:3000/taskpane.html"/>
+  <Hosts>
+    <Host Name="Workbook"/>
+  </Hosts>
+  <Requirements>
+    <Sets DefaultMinVersion="1.1">
+      <Set Name="SharedRuntime" MinVersion="1.1"/>
+    </Sets>
+  </Requirements>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://localhost:3000/taskpane.html"/>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Workbook">
+        <Runtimes>
+          <Runtime resid="Taskpane.Url" lifetime="long"/>
+        </Runtimes>
+        <AllFormFactors>
+          <ExtensionPoint xsi:type="CustomFunctions">
+            <Script>
+              <SourceLocation resid="Functions.Script.Url"/>
+            </Script>
+            <Page>
+              <SourceLocation resid="Taskpane.Url"/>
+            </Page>
+            <Metadata>
+              <SourceLocation resid="Functions.Metadata.Url"/>
+            </Metadata>
+            <Namespace resid="Functions.Namespace"/>
+          </ExtensionPoint>
+        </AllFormFactors>
+        <DesktopFormFactor>
+          <GetStarted>
+            <Title resid="GetStarted.Title"/>
+            <Description resid="GetStarted.Description"/>
+            <LearnMoreUrl resid="Taskpane.Url"/>
+          </GetStarted>
+          <FunctionFile resid="Taskpane.Url"/>
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="TQ.Group">
+                <Label resid="Group.Label"/>
+                <Icon>
+                  <bt:Image size="16" resid="Icon.16"/>
+                  <bt:Image size="32" resid="Icon.32"/>
+                  <bt:Image size="80" resid="Icon.80"/>
+                </Icon>
+                <Control xsi:type="Button" id="TQ.TaskpaneButton">
+                  <Label resid="Button.Label"/>
+                  <Supertip>
+                    <Title resid="Button.Label"/>
+                    <Description resid="Button.Tooltip"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16"/>
+                    <bt:Image size="32" resid="Icon.32"/>
+                    <bt:Image size="80" resid="Icon.80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>TQ.Taskpane</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url"/>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+            <CustomTab id="TQ.Tab">
+              <Group id="TQ.G.Reports">
+                <Label resid="G.Reports"/>
+                <Icon><bt:Image size="16" resid="Icon.tq.16"/><bt:Image size="32" resid="Icon.tq.32"/><bt:Image size="80" resid="Icon.tq.80"/></Icon>
+                <Control xsi:type="Button" id="TQ.Panel">
+                  <Label resid="L.Panel"/>
+                  <Supertip><Title resid="L.Panel"/><Description resid="T.Panel"/></Supertip>
+                  <Icon><bt:Image size="16" resid="Icon.tq.16"/><bt:Image size="32" resid="Icon.tq.32"/><bt:Image size="80" resid="Icon.tq.80"/></Icon>
+                  <Action xsi:type="ShowTaskpane"><TaskpaneId>TQ.Taskpane</TaskpaneId><SourceLocation resid="Taskpane.Url"/></Action>
+                </Control>
+                <Control xsi:type="Button" id="TQ.NewReport">
+                  <Label resid="L.NewReport"/>
+                  <Supertip><Title resid="L.NewReport"/><Description resid="T.NewReport"/></Supertip>
+                  <Icon><bt:Image size="16" resid="Icon.wizard.16"/><bt:Image size="32" resid="Icon.wizard.32"/><bt:Image size="80" resid="Icon.wizard.80"/></Icon>
+                  <Action xsi:type="ExecuteFunction"><FunctionName>newReport</FunctionName></Action>
+                </Control>
+                <Control xsi:type="Button" id="TQ.Dashboard">
+                  <Label resid="L.Dashboard"/>
+                  <Supertip><Title resid="L.Dashboard"/><Description resid="T.Dashboard"/></Supertip>
+                  <Icon><bt:Image size="16" resid="Icon.dashboard.16"/><bt:Image size="32" resid="Icon.dashboard.32"/><bt:Image size="80" resid="Icon.dashboard.80"/></Icon>
+                  <Action xsi:type="ExecuteFunction"><FunctionName>newDashboard</FunctionName></Action>
+                </Control>
+                <Control xsi:type="Button" id="TQ.Chat">
+                  <Label resid="L.Chat"/>
+                  <Supertip><Title resid="L.Chat"/><Description resid="T.Chat"/></Supertip>
+                  <Icon><bt:Image size="16" resid="Icon.chat.16"/><bt:Image size="32" resid="Icon.chat.32"/><bt:Image size="80" resid="Icon.chat.80"/></Icon>
+                  <Action xsi:type="ExecuteFunction"><FunctionName>openChat</FunctionName></Action>
+                </Control>
+              </Group>
+              <Group id="TQ.G.Refresh">
+                <Label resid="G.Refresh"/>
+                <Icon><bt:Image size="16" resid="Icon.refresh.16"/><bt:Image size="32" resid="Icon.refresh.32"/><bt:Image size="80" resid="Icon.refresh.80"/></Icon>
+                <Control xsi:type="Button" id="TQ.RefreshAll">
+                  <Label resid="L.RefreshAll"/>
+                  <Supertip><Title resid="L.RefreshAll"/><Description resid="T.RefreshAll"/></Supertip>
+                  <Icon><bt:Image size="16" resid="Icon.refresh.16"/><bt:Image size="32" resid="Icon.refresh.32"/><bt:Image size="80" resid="Icon.refresh.80"/></Icon>
+                  <Action xsi:type="ExecuteFunction"><FunctionName>refreshAll</FunctionName></Action>
+                </Control>
+                <Control xsi:type="Button" id="TQ.RefreshSheet">
+                  <Label resid="L.RefreshSheet"/>
+                  <Supertip><Title resid="L.RefreshSheet"/><Description resid="T.RefreshSheet"/></Supertip>
+                  <Icon><bt:Image size="16" resid="Icon.sheet.16"/><bt:Image size="32" resid="Icon.sheet.32"/><bt:Image size="80" resid="Icon.sheet.80"/></Icon>
+                  <Action xsi:type="ExecuteFunction"><FunctionName>refreshSheet</FunctionName></Action>
+                </Control>
+                <Control xsi:type="Button" id="TQ.RefreshSelection">
+                  <Label resid="L.RefreshSelection"/>
+                  <Supertip><Title resid="L.RefreshSelection"/><Description resid="T.RefreshSelection"/></Supertip>
+                  <Icon><bt:Image size="16" resid="Icon.selection.16"/><bt:Image size="32" resid="Icon.selection.32"/><bt:Image size="80" resid="Icon.selection.80"/></Icon>
+                  <Action xsi:type="ExecuteFunction"><FunctionName>refreshSelection</FunctionName></Action>
+                </Control>
+              </Group>
+              <Group id="TQ.G.Explore">
+                <Label resid="G.Explore"/>
+                <Icon><bt:Image size="16" resid="Icon.drill.16"/><bt:Image size="32" resid="Icon.drill.32"/><bt:Image size="80" resid="Icon.drill.80"/></Icon>
+                <Control xsi:type="Button" id="TQ.Drill">
+                  <Label resid="L.Drill"/>
+                  <Supertip><Title resid="L.Drill"/><Description resid="T.Drill"/></Supertip>
+                  <Icon><bt:Image size="16" resid="Icon.drill.16"/><bt:Image size="32" resid="Icon.drill.32"/><bt:Image size="80" resid="Icon.drill.80"/></Icon>
+                  <Action xsi:type="ExecuteFunction"><FunctionName>drillDown</FunctionName></Action>
+                </Control>
+                <Control xsi:type="Button" id="TQ.Formula">
+                  <Label resid="L.Formula"/>
+                  <Supertip><Title resid="L.Formula"/><Description resid="T.Formula"/></Supertip>
+                  <Icon><bt:Image size="16" resid="Icon.formula.16"/><bt:Image size="32" resid="Icon.formula.32"/><bt:Image size="80" resid="Icon.formula.80"/></Icon>
+                  <Action xsi:type="ExecuteFunction"><FunctionName>insertFormula</FunctionName></Action>
+                </Control>
+              </Group>
+              <Group id="TQ.G.Send">
+                <Label resid="G.Send"/>
+                <Icon><bt:Image size="16" resid="Icon.pdf.16"/><bt:Image size="32" resid="Icon.pdf.32"/><bt:Image size="80" resid="Icon.pdf.80"/></Icon>
+                <Control xsi:type="Button" id="TQ.Values">
+                  <Label resid="L.Values"/>
+                  <Supertip><Title resid="L.Values"/><Description resid="T.Values"/></Supertip>
+                  <Icon><bt:Image size="16" resid="Icon.values.16"/><bt:Image size="32" resid="Icon.values.32"/><bt:Image size="80" resid="Icon.values.80"/></Icon>
+                  <Action xsi:type="ExecuteFunction"><FunctionName>copyValues</FunctionName></Action>
+                </Control>
+                <Control xsi:type="Button" id="TQ.Pdf">
+                  <Label resid="L.Pdf"/>
+                  <Supertip><Title resid="L.Pdf"/><Description resid="T.Pdf"/></Supertip>
+                  <Icon><bt:Image size="16" resid="Icon.pdf.16"/><bt:Image size="32" resid="Icon.pdf.32"/><bt:Image size="80" resid="Icon.pdf.80"/></Icon>
+                  <Action xsi:type="ExecuteFunction"><FunctionName>setupPdf</FunctionName></Action>
+                </Control>
+              </Group>
+              <Label resid="Tab.Label"/>
+            </CustomTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="Icon.16" DefaultValue="https://localhost:3000/assets/icon-16.png?v=112"/>
+        <bt:Image id="Icon.32" DefaultValue="https://localhost:3000/assets/icon-32.png?v=112"/>
+        <bt:Image id="Icon.80" DefaultValue="https://localhost:3000/assets/icon-80.png?v=112"/>
+        <bt:Image id="Icon.panel.16" DefaultValue="https://localhost:3000/assets/icon-panel-16.png?v=112"/>
+        <bt:Image id="Icon.panel.32" DefaultValue="https://localhost:3000/assets/icon-panel-32.png?v=112"/>
+        <bt:Image id="Icon.panel.80" DefaultValue="https://localhost:3000/assets/icon-panel-80.png?v=112"/>
+        <bt:Image id="Icon.wizard.16" DefaultValue="https://localhost:3000/assets/icon-wizard-16.png?v=112"/>
+        <bt:Image id="Icon.wizard.32" DefaultValue="https://localhost:3000/assets/icon-wizard-32.png?v=112"/>
+        <bt:Image id="Icon.wizard.80" DefaultValue="https://localhost:3000/assets/icon-wizard-80.png?v=112"/>
+        <bt:Image id="Icon.chat.16" DefaultValue="https://localhost:3000/assets/icon-chat-16.png?v=112"/>
+        <bt:Image id="Icon.chat.32" DefaultValue="https://localhost:3000/assets/icon-chat-32.png?v=112"/>
+        <bt:Image id="Icon.chat.80" DefaultValue="https://localhost:3000/assets/icon-chat-80.png?v=112"/>
+        <bt:Image id="Icon.refresh.16" DefaultValue="https://localhost:3000/assets/icon-refresh-16.png?v=112"/>
+        <bt:Image id="Icon.refresh.32" DefaultValue="https://localhost:3000/assets/icon-refresh-32.png?v=112"/>
+        <bt:Image id="Icon.refresh.80" DefaultValue="https://localhost:3000/assets/icon-refresh-80.png?v=112"/>
+        <bt:Image id="Icon.sheet.16" DefaultValue="https://localhost:3000/assets/icon-sheet-16.png?v=112"/>
+        <bt:Image id="Icon.sheet.32" DefaultValue="https://localhost:3000/assets/icon-sheet-32.png?v=112"/>
+        <bt:Image id="Icon.sheet.80" DefaultValue="https://localhost:3000/assets/icon-sheet-80.png?v=112"/>
+        <bt:Image id="Icon.selection.16" DefaultValue="https://localhost:3000/assets/icon-selection-16.png?v=112"/>
+        <bt:Image id="Icon.selection.32" DefaultValue="https://localhost:3000/assets/icon-selection-32.png?v=112"/>
+        <bt:Image id="Icon.selection.80" DefaultValue="https://localhost:3000/assets/icon-selection-80.png?v=112"/>
+        <bt:Image id="Icon.drill.16" DefaultValue="https://localhost:3000/assets/icon-drill-16.png?v=112"/>
+        <bt:Image id="Icon.drill.32" DefaultValue="https://localhost:3000/assets/icon-drill-32.png?v=112"/>
+        <bt:Image id="Icon.drill.80" DefaultValue="https://localhost:3000/assets/icon-drill-80.png?v=112"/>
+        <bt:Image id="Icon.formula.16" DefaultValue="https://localhost:3000/assets/icon-formula-16.png?v=112"/>
+        <bt:Image id="Icon.formula.32" DefaultValue="https://localhost:3000/assets/icon-formula-32.png?v=112"/>
+        <bt:Image id="Icon.formula.80" DefaultValue="https://localhost:3000/assets/icon-formula-80.png?v=112"/>
+        <bt:Image id="Icon.values.16" DefaultValue="https://localhost:3000/assets/icon-values-16.png?v=112"/>
+        <bt:Image id="Icon.values.32" DefaultValue="https://localhost:3000/assets/icon-values-32.png?v=112"/>
+        <bt:Image id="Icon.values.80" DefaultValue="https://localhost:3000/assets/icon-values-80.png?v=112"/>
+        <bt:Image id="Icon.pdf.16" DefaultValue="https://localhost:3000/assets/icon-pdf-16.png?v=112"/>
+        <bt:Image id="Icon.pdf.32" DefaultValue="https://localhost:3000/assets/icon-pdf-32.png?v=112"/>
+        <bt:Image id="Icon.pdf.80" DefaultValue="https://localhost:3000/assets/icon-pdf-80.png?v=112"/>
+        <bt:Image id="Icon.dashboard.16" DefaultValue="https://localhost:3000/assets/icon-dashboard-16.png?v=112"/>
+        <bt:Image id="Icon.dashboard.32" DefaultValue="https://localhost:3000/assets/icon-dashboard-32.png?v=112"/>
+        <bt:Image id="Icon.dashboard.80" DefaultValue="https://localhost:3000/assets/icon-dashboard-80.png?v=112"/>
+        <bt:Image id="Icon.tq.16" DefaultValue="https://localhost:3000/assets/icon-tq-16.png?v=112"/>
+        <bt:Image id="Icon.tq.32" DefaultValue="https://localhost:3000/assets/icon-tq-32.png?v=112"/>
+        <bt:Image id="Icon.tq.80" DefaultValue="https://localhost:3000/assets/icon-tq-80.png?v=112"/>
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="Functions.Script.Url" DefaultValue="https://localhost:3000/functions.js"/>
+        <bt:Url id="Functions.Metadata.Url" DefaultValue="https://localhost:3000/functions.json"/>
+        <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3000/taskpane.html"/>
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="Functions.Namespace" DefaultValue="TQ"/>
+        <bt:String id="GetStarted.Title" DefaultValue="TQ Connector is ready"/>
+        <bt:String id="Group.Label" DefaultValue="NetSuite"/>
+        <bt:String id="Button.Label" DefaultValue="TQ Connector"/>
+        <bt:String id="Tab.Label" DefaultValue="TQ Connector"/>
+        <bt:String id="G.Reports" DefaultValue="Reports"/>
+        <bt:String id="G.Refresh" DefaultValue="Refresh"/>
+        <bt:String id="G.Explore" DefaultValue="Explore"/>
+        <bt:String id="G.Send" DefaultValue="Send"/>
+        <bt:String id="L.Panel" DefaultValue="Open panel"/>
+        <bt:String id="L.NewReport" DefaultValue="New report"/>
+        <bt:String id="L.Dashboard" DefaultValue="Dashboard"/>
+        <bt:String id="L.Chat" DefaultValue="Chat"/>
+        <bt:String id="L.RefreshAll" DefaultValue="Refresh all"/>
+        <bt:String id="L.RefreshSheet" DefaultValue="Refresh sheet"/>
+        <bt:String id="L.RefreshSelection" DefaultValue="Refresh selection"/>
+        <bt:String id="L.Drill" DefaultValue="Drill down"/>
+        <bt:String id="L.Formula" DefaultValue="Insert formula"/>
+        <bt:String id="L.Values" DefaultValue="Copy as values"/>
+        <bt:String id="L.Pdf" DefaultValue="Set up for PDF"/>
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="GetStarted.Description" DefaultValue="Open TQ Connector on the Home tab, then type =TQ.BALANCE( in any cell."/>
+        <bt:String id="Button.Tooltip" DefaultValue="Refresh balances, drill down and insert NetSuite lists."/>
+        <bt:String id="T.Panel" DefaultValue="Show the TQ Connector panel."/>
+        <bt:String id="T.NewReport" DefaultValue="Build a report step by step: what, which periods, filters and sheets."/>
+        <bt:String id="T.Chat" DefaultValue="Ask for a report or a number in your own words, or change a report with a short follow-up."/>
+        <bt:String id="T.RefreshAll" DefaultValue="Recalculate every TQ formula in the workbook."/>
+        <bt:String id="T.RefreshSheet" DefaultValue="Recalculate only the active sheet."/>
+        <bt:String id="T.RefreshSelection" DefaultValue="Recalculate only the selected cells."/>
+        <bt:String id="T.Drill" DefaultValue="Show the accounts or transactions behind the selected cell."/>
+        <bt:String id="T.Formula" DefaultValue="Pick an account, period and filters; the formula goes into the selected cell."/>
+        <bt:String id="T.Values" DefaultValue="Copy the report (or its whole pack) with the numbers fixed, for people without the add-in."/>
+        <bt:String id="T.Pdf" DefaultValue="Landscape, one page wide, company logo and name, title and page numbers on the pack."/>
+        <bt:String id="T.Dashboard" DefaultValue="A dashboard sheet: key figures as tiles and Excel charts over live NetSuite numbers, rolling with the month."/>
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>

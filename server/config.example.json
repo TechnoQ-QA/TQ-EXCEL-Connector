@@ -1,0 +1,10 @@
+{
+  "accountId": "1234567_SB1",
+  "restletUrl": "https://1234567-sb1.restlets.api.netsuite.com/app/site/hosting/restlet.nl?script=0000&deploy=1",
+  "consumerKey": "",
+  "consumerSecret": "",
+  "tokenId": "",
+  "tokenSecret": "",
+  "fiscalYearStartMonth": 1,
+  "ai": { "apiKey": "", "model": "claude-opus-5-5" }
+}

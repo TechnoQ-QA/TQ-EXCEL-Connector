@@ -1,0 +1,53 @@
+{
+  "functions": [
+    {
+      "id": "BALANCE",
+      "name": "BALANCE",
+      "description": "General ledger balance from NetSuite. Balance sheet accounts return the balance at the end of the period; income and expense accounts return activity for the period range.",
+      "result": { "type": "number", "dimensionality": "scalar" },
+      "parameters": [
+        { "name": "account", "description": "Account number", "type": "any", "dimensionality": "scalar" },
+        { "name": "fromPeriod", "description": "Accounting period name, e.g. Jan 2026", "type": "any", "dimensionality": "scalar" },
+        { "name": "toPeriod", "description": "Last period of a range (leave empty for a single period)", "type": "any", "dimensionality": "scalar", "optional": true },
+        { "name": "subsidiary", "description": "Subsidiary name or internal ID", "type": "any", "dimensionality": "scalar", "optional": true },
+        { "name": "department", "description": "Department name or internal ID", "type": "any", "dimensionality": "scalar", "optional": true },
+        { "name": "class", "description": "Class name or internal ID", "type": "any", "dimensionality": "scalar", "optional": true },
+        { "name": "location", "description": "Location name or internal ID", "type": "any", "dimensionality": "scalar", "optional": true },
+        { "name": "filters", "description": "Any other filter, e.g. Brand: Premium; Name: Al Noor", "type": "any", "dimensionality": "scalar", "optional": true }
+      ],
+      "options": { "requiresAddress": true }
+    },
+    {
+      "id": "ACCOUNTNAME",
+      "name": "ACCOUNTNAME",
+      "description": "Name of a NetSuite account, from its account number.",
+      "result": { "type": "string", "dimensionality": "scalar" },
+      "parameters": [
+        { "name": "account", "description": "Account number", "type": "any", "dimensionality": "scalar" }
+      ]
+    },
+    {
+      "id": "PERIOD",
+      "name": "PERIOD",
+      "description": "A period name worked out from another: =TQ.PERIOD(B8,-1) the month before, =TQ.PERIOD(B8,\"FYS\") the first month of its fiscal year, =TQ.PERIOD(B8,\"LY\") the same month last year.",
+      "result": { "type": "string", "dimensionality": "scalar" },
+      "parameters": [
+        { "name": "period", "description": "A period name such as Oct 2026, or CM (this month), CM-1 (last month)", "type": "any", "dimensionality": "scalar" },
+        { "name": "shift", "description": "Months to move (-1, 12) or FYS, FYE, QS, QE, LY, optionally with +n or -n (FYS-12 = start of last year)", "type": "any", "dimensionality": "scalar", "optional": true }
+      ]
+    },
+    {
+      "id": "SQL",
+      "name": "SQL",
+      "description": "The first value a NetSuite SuiteQL query returns, for data that does not post to the ledger (open orders, quantities). Each ? takes the next argument.",
+      "result": { "type": "any", "dimensionality": "scalar" },
+      "parameters": [
+        { "name": "query", "description": "A SuiteQL SELECT, e.g. SELECT COUNT(*) FROM transaction WHERE type = 'SalesOrd'", "type": "any", "dimensionality": "scalar" },
+        { "name": "p1", "description": "Value for the first ?", "type": "any", "dimensionality": "scalar", "optional": true },
+        { "name": "p2", "description": "Value for the second ?", "type": "any", "dimensionality": "scalar", "optional": true },
+        { "name": "p3", "description": "Value for the third ?", "type": "any", "dimensionality": "scalar", "optional": true },
+        { "name": "p4", "description": "Value for the fourth ?", "type": "any", "dimensionality": "scalar", "optional": true }
+      ]
+    }
+  ]
+}

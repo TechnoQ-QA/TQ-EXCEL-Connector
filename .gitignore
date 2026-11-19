@@ -1,0 +1,12 @@
+server/config.json
+certs/
+__pycache__/
+build/
+server/machine.json
+netsuite/sdf/project.json
+server/licence.json
+server/data/
+data/
+*.pfx
+*.key
+.claude/

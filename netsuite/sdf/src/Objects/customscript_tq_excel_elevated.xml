@@ -1,0 +1,25 @@
+<suitelet scriptid="customscript_tq_excel_elevated">
+  <description>TQ Excel Connector: runs the balance queries as Administrator so they see every posting. Who may ask is checked in tq_excel_core.js. Called only by the RESTlet; not available without login.</description>
+  <isinactive>F</isinactive>
+  <name>TQ Excel Connector elevated</name>
+  <notifyadmins>F</notifyadmins>
+  <notifyemails></notifyemails>
+  <notifyowner>T</notifyowner>
+  <notifyuser>F</notifyuser>
+  <scriptfile>[/SuiteScripts/TQ Excel Connector/tq_excel_elevated.js]</scriptfile>
+  <scriptdeployments>
+    <scriptdeployment scriptid="customdeploy_tq_excel_elevated">
+      <allemployees>F</allemployees>
+      <allpartners>F</allpartners>
+      <allroles>T</allroles>
+      <audslctrole></audslctrole>
+      <eventtype></eventtype>
+      <isdeployed>T</isdeployed>
+      <isonline>F</isonline>
+      <loglevel>ERROR</loglevel>
+      <runasrole>ADMINISTRATOR</runasrole>
+      <status>RELEASED</status>
+      <title>TQ Excel Connector elevated</title>
+    </scriptdeployment>
+  </scriptdeployments>
+</suitelet>
