@@ -332,7 +332,10 @@ objects that the SDF package deployed there:
   use. Changed on Customization > SuiteBundler > Create Bundle > List > Set Availability.
 - Releasing a new script version: deploy the SDF package to 12253116 (auth ID `tq-publisher`), then Customization >
   SuiteBundler > Create Bundle > List > 715956 > **Push** to the customer accounts (or customers update from
-  Installed Bundles).
+  Installed Bundles). The bundle points at the live files, so a new install takes the deployed version at once.
+  Push only to accounts whose Status is Installed: on an account marked Not Installed, Push installs the bundle.
+- 23 Nov 2026: script 9 deployed to 12253116 (files 632/633 checked: `VERSION = 9`, `callerRole`); install base 0,
+  so nothing to push. The bundle's Version label still says 8.0.
 - NetSuite now recommends Copy to Account or SDF over SuiteBundler; SuiteBundler is still supported and is the only
   route for installing by ID without a CLI at the customer.
 

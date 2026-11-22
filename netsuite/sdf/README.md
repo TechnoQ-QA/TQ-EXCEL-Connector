@@ -61,6 +61,10 @@ the connector at the new RESTlet's URL, then make the old script record inactive
 
 ## Deployed so far
 
+- **Script 9, 23 Nov 2026:** sandbox 65987_SB1 (30 of 30 steps) and Techno Q's account 12253116, which feeds bundle
+  715956 (30 of 30 steps). Deploy to the sandbox by setting `defaultAuthId` in `project.json` to `tq-sandbox` for
+  the run (the CLI has no account option), then back to `tq-publisher`.
+
 - **Techno Q sandbox (65987_SB1), Nov 2026.** Validated by NetSuite (21 of 21 steps, 0 errors) and deployed (29 of
   29 steps). The deploy created the role TQ Excel User and updated the hand-made RESTlet and Suitelet in place
   (they already had these IDs, so nothing was duplicated); the script files kept their File Cabinet IDs. The
