@@ -11,7 +11,7 @@ const BUNDLE = '715956';
 const body = [
   ...c.cover('Installation Guide', 'A new client in three steps: install the bundle, run the setup, sign in',
     ['Version 1.5  ·  November 2026', 'For: the client’s NetSuite administrator, IT and users',
-      'NetSuite bundle ' + BUNDLE + '  ·  Connector 1.5.0']),
+      'NetSuite bundle ' + BUNDLE + '  ·  Connector 1.5.1']),
   ...c.toc(),
 
   // ------------------------------------------------------------------ 1
