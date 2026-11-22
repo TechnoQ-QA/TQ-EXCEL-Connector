@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>TQ Connector</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-  <link rel="stylesheet" href="panel.css?v=152" />
+  <link rel="stylesheet" href="panel.css?v=153" />
 </head>
 <body>
   <!-- the header: logo, connection, chat and settings -->
@@ -450,10 +450,15 @@
           <button data-list="class">Classes</button>
           <button data-list="location">Locations</button>
         </div>
+        <label class="check"><input type="checkbox" id="listLive" checked /> Live list: a =TQ.LIST formula that grows by itself when NetSuite gets a new one (untick for plain values)</label>
         <div class="label">Formulas</div>
         <code>=TQ.BALANCE(account, fromPeriod, [toPeriod], [subsidiary], [department], [class], [location], [filters])</code>
         <p><code>=TQ.ACCOUNTNAME(account)</code></p>
         <p><code>=TQ.PERIOD(period, [shift])</code></p>
+        <p><code>=TQ.LIST(kind, [filter], [from], [to], [hideZero], [subsidiary], [show])</code> spills a list that grows by itself:
+          <code>=TQ.LIST("accounts","6000-6999")</code>, <code>=TQ.LIST("departments",,"FYS","CM",TRUE)</code> (only those with a balance).
+          For formulas next to it, list the numbers only (<code>"number"</code> as the last argument) in A10, then
+          <code>=TQ.ACCOUNTNAME(A10#)</code> and <code>=TQ.BALANCE(A10#,$B$8)</code> grow with it.</p>
         <p>Periods can be relative: <code>CM</code> (this month) <code>CM-1</code> (last month) <code>LY</code> (same month last year) <code>FYS</code> / <code>FYE</code> (first / last month of the year) <code>QS</code> <code>QE</code> <code>FYS-12</code> (start of last year). Year to date: from <code>FYS</code> to <code>CM</code>. With a month cell: <code>=TQ.PERIOD($B$8,"FYS")</code>.</p>
         <p>Totals work as the account: <code>type:Income</code> <code>type:Bank,AcctRec</code> <code>calc:NetIncome</code> <code>calc:NetIncomeYTD</code> <code>calc:RetainedEarnings</code> <code>4000, 4100-4199</code> <code>calc:Days</code></p>
         <p>Filters: <code>Sales, Bar</code> <code>not Sales</code> <code>Food*</code> (with everything under it) <code>Parent*</code> (subsidiary, consolidated) <code>Brand: Premium; Name: Al Noor</code></p>
@@ -637,18 +642,18 @@
   <!-- results of refresh, drill and lists: seen from every screen -->
   <footer id="message" class="toast" aria-live="polite"></footer>
 
-  <script src="nav.js?v=152"></script>
-  <script src="functions.js"></script>
-  <script src="taskpane.js?v=152"></script>
-  <script src="chat.js?v=152"></script>
+  <script src="nav.js?v=153"></script>
+  <script src="functions.js?v=153"></script>
+  <script src="taskpane.js?v=153"></script>
+  <script src="chat.js?v=153"></script>
   <script src="designer.js"></script>
   <script src="data.js"></script>
   <script src="filters.js"></script>
   <script src="builder.js"></script>
   <script src="pack.js"></script>
   <script src="budget.js"></script>
-  <script src="library.js?v=152"></script>
-  <script src="extras.js?v=152"></script>
-  <script src="home.js?v=152"></script>
+  <script src="library.js?v=153"></script>
+  <script src="extras.js?v=153"></script>
+  <script src="home.js?v=153"></script>
 </body>
 </html>

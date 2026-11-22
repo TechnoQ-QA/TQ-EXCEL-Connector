@@ -7,6 +7,7 @@
  * everything under it; for a subsidiary, consolidated in its currency). filters takes any other
  * filter: "Brand: Premium; Name: Al Noor".
  *   =TQ.ACCOUNTNAME(account)
+ *   =TQ.LIST(kind, [filter], [fromPeriod], [toPeriod], [hideZero], [subsidiary], [show])   a list that spills and grows
  *
  * A workbook can hold thousands of these. Cells that calculate together are
  * collected for a moment and sent to the server as one request.
@@ -214,9 +215,33 @@
     return sqlCache.get(key);
   }
 
+  /* =TQ.LIST(kind, [filter], [fromPeriod], [toPeriod], [hideZero], [subsidiary], [show]): a list that spills down
+   * and is asked again on every refresh, so a new account, department or month appears by itself. Other formulas
+   * point at it with A10# (the whole spilled list). */
+  var listCache = new Map();
+  function list(kind, filter, fromPeriod, toPeriod, hideZero, subsidiary, show) {
+    var payload = { action: 'list', kind: text(kind), filter: optional(filter), fromPeriod: optional(fromPeriod),
+      toPeriod: optional(toPeriod), hideZero: hideZero === true || /^(true|yes|1)$/i.test(optional(hideZero)),
+      subsidiary: optional(subsidiary), show: optional(show) };
+    var key = JSON.stringify(payload);
+    if (!listCache.has(key)) {
+      listCache.set(key, callApi(payload).then(
+        function (data) {
+          var rows = data.rows || [];
+          if (!rows.length) return [['']];   // nothing matches: one empty cell, no error
+          var width = rows.reduce(function (w, r) { return Math.max(w, r.length); }, 1);
+          return rows.map(function (r) { var out = r.slice(); while (out.length < width) out.push(''); return out; });
+        },
+        function (error) { listCache.delete(key); throw fail(error.message); }
+      ));
+    }
+    return listCache.get(key);
+  }
+
   function clearCache() {
     cache.clear();
     sqlCache.clear();
+    listCache.clear();
     periodCache.clear();
     accountsPromise = null;
   }
@@ -242,5 +267,6 @@
     CustomFunctions.associate('ACCOUNTNAME', accountName);
     CustomFunctions.associate('PERIOD', period);
     CustomFunctions.associate('SQL', sql);
+    CustomFunctions.associate('LIST', list);
   }
 })();

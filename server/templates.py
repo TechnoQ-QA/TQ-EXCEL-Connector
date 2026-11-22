@@ -37,6 +37,11 @@ TEMPLATES = [
      "about": "Revenue and departmental profit for Rooms, Food and Beverage and the other operated departments, the "
               "undistributed expenses, gross operating profit and GOP %, with occupancy, ADR and RevPAR when the room "
               "statistics are in NetSuite. Month and year to date against last year; rolls forward."},
+    {"id": "usali", "name": "USALI income statement by department",
+     "about": "Every operated department (Rooms, Food and Beverage, Telecommunications, Laundry, Recreation, Rental) with "
+              "its revenue, payroll, other expenses and departmental profit, the undistributed departments, gross "
+              "operating profit and net profit, with the accounts under each line. Month and year to date against "
+              "budget and last year, each with % of income. Ends with a check against NetSuite's net profit; rolls forward."},
     {"id": "restaurant", "name": "Restaurant P&L",
      "about": "Food and beverage sales and costs, food cost %, beverage cost %, labour %, prime cost and operating "
               "profit. Month and year to date against last year; rolls forward."},
@@ -253,6 +258,108 @@ def _hotel(ledger, name):
     return design
 
 
+# The detailed USALI departmental statement (like NetSuite's "Income Statement by department" in USALI form): every
+# operated department with its revenue, payroll, other expenses and departmental profit, the undistributed
+# departments, gross operating profit and net profit; month and year to date against budget and last year, each
+# with a % of income column (a department's lines as % of its own revenue, the totals as % of total revenue).
+_USALI_OPERATED = [
+    ("rooms", "Rooms", r"\brooms?\b(?!\s*service)|accommodation|front\s*office|house\s*keeping"),
+    ("fnb", "Food and Beverage", r"food|beverage|f\s*&\s*b|f\s*and\s*b|restaurant|banquet|outlet|kitchen"),
+    ("telecom", "Telecommunications", r"telecom|telephone"),
+    ("laundry", "Guest Laundry", r"laundry"),
+    ("recreation", "Recreation and Spa", r"recreation|\bspa\b|health\s*club|fitness|\bpool\b|leisure"),
+    ("parking", "Parking", r"parking"),
+    ("other", "Other Operated Departments", r"other\s+operat|business\s+cent|minor"),
+    ("misc", "Rental and Other Income", r"misc|rental|other\s+income"),
+]
+PAYROLL_RE = (r"payroll|salar|wage|overtime|bonus|allowance|benefit|vacation|leave\s+pay|medical|health\s+card|"
+              r"housing|iqama|residency|visa|gosi|social\s+(ins|sec)|pension|end\s+of\s+service|\beosb\b|gratuity|"
+              r"service\s+award|staff\s+meal|meals?\s+exp|school|employee|labou?r\s+cost|personnel")
+
+
+def usali_columns():
+    """Month and year to date: actual, budget, last year, each with its % of income. Follow the month cell (B8)."""
+    new = layouts.new_column
+    pct = lambda label, of: new(label, "formula", "", "", None, "=[%s]/[%s@base]" % (of, of), "percent")  # noqa: E731
+    return [new("Month", "period", "CM", "CM"), pct("Month %", "Month"),
+            new("Budget", "period", "CM", "CM", data="budget"), pct("Budget %", "Budget"),
+            new("Month last year", "period", "LY", "LY"),
+            new("Year to date", "period", "FYS", "CM"), pct("YTD %", "Year to date"),
+            new("YTD budget", "period", "FYS", "CM", data="budget"), pct("YTD budget %", "YTD budget"),
+            new("YTD last year", "period", "FYS-12", "LY"), pct("YTD last year %", "YTD last year")]
+
+
+def _usali(ledger, name):
+    """USALI income statement by department, built from the customer's own departments and accounts."""
+    deps = _find_departments(ledger, _USALI_OPERATED)
+    if not deps:
+        raise ReportError("No hotel departments were found (such as Rooms or Food and Beverage). The USALI statement "
+                          "reads its parts from the departments in NetSuite; start from the P&L summary instead.")
+    undistributed = _find_departments(ledger, _HOTEL_UNDISTRIBUTED)
+    for key in [k for k in undistributed if undistributed[k][1] in {v[1] for v in deps.values()}]:
+        undistributed.pop(key)
+    payroll = [a["number"] for a in ledger.accounts()
+               if a["type"] in ("Expense", "COGS") and re.search(PAYROLL_RE, a["name"], re.I)]
+    pay = ", ".join(payroll)
+    lines, notes, revenues, expenses, profits = [], [], [], [], []
+    for key, label, _ in _USALI_OPERATED:
+        if key not in deps:
+            continue
+        f = deps[key][1]
+        rev, exp, prof = label + " Revenue", label + " Expenses", label + " Departmental Profit"
+        lines.append((label, rev, "accounts", "type:Income | " + f, "", "base"))
+        if pay:
+            lines.append((label, label + " Payroll and Related", "accounts", pay + " | " + f, "", ""))
+            lines.append((label, label + " Other Expenses", "accounts",
+                          "type:COGS,Expense excluding " + pay + " | " + f, "", ""))
+            lines.append((label, exp, "formula", "=[%s Payroll and Related]+[%s Other Expenses]" % (label, label), "", "bold"))
+        else:
+            lines.append((label, exp, "accounts", "type:COGS,Expense | " + f, "", "bold"))
+        lines.append((label, prof, "formula", "=[%s]-[%s]" % (rev, exp), "", "bold"))
+        revenues.append(rev)
+        expenses.append(exp)
+        profits.append(prof)
+    plus = lambda names: "=" + "+".join("[%s]" % n for n in names)  # noqa: E731
+    lines += [("Total Operated Departments", "Total Revenue", "formula", plus(revenues), "", "bold base"),
+              ("Total Operated Departments", "Total Departmental Expenses", "formula", plus(expenses), "", ""),
+              ("Total Operated Departments", "Total Departmental Profit", "formula", plus(profits), "", "bold")]
+    if undistributed:
+        names = []
+        for key, label, _ in _HOTEL_UNDISTRIBUTED:
+            if key in undistributed:
+                lines.append(("Undistributed Operating Expenses", label, "accounts",
+                              "type:COGS,Expense | " + undistributed[key][1], "", ""))
+                names.append(label)
+        lines.append(("Undistributed Operating Expenses", "Total Undistributed Expenses", "formula", plus(names), "", "bold"))
+        gop = "=[Total Departmental Profit]-[Total Undistributed Expenses]"
+    else:
+        notes.append("No undistributed departments (A&G, Sales and Marketing, Maintenance...) were found, so the gross "
+                     "operating profit equals the departmental profit.")
+        gop = "=[Total Departmental Profit]"
+    lines += [("Gross Operating Profit", "Gross Operating Profit", "formula", gop, "", "bold"),
+              ("Non-operating", "Non-operating Income", "accounts", "type:OthIncome", "", ""),
+              ("Non-operating", "Non-operating Expenses", "accounts", "type:OthExpense", "", ""),
+              ("Non-operating", "Net Profit", "formula",
+               "=[Gross Operating Profit]+[Non-operating Income]-[Non-operating Expenses]", "", "bold"),
+              # every account in NetSuite, whatever its department: a department this statement does not name
+              # (or no department at all) shows up as a difference
+              ("Check", "Net profit in NetSuite", "accounts", "calc:NetIncome", "", ""),
+              ("Check", "Difference (should be 0)", "formula", "=[Net Profit]-[Net profit in NetSuite]", "", "bold")]
+    if not pay:
+        notes.append("No payroll accounts were recognised by name (salary, wages, allowances...), so each department "
+                     "shows its expenses as one line.")
+    missing = [label for key, label, _ in _USALI_OPERATED[:2] if key not in deps]
+    if missing:
+        notes.append("Not found among the departments: %s." % ", ".join(missing))
+    notes.append("Departments found: %s." % ", ".join("%s = %s" % (deps[k][0], deps[k][1].split(": ", 1)[1].rstrip("*"))
+                                                     for k, _, _ in _USALI_OPERATED if k in deps))
+    design = _design(name, "USALI P&L by Department", lines)
+    design["columns"] = usali_columns()
+    design["detail"] = True    # the accounts under each line, as in NetSuite's statement
+    design["notes"] = notes
+    return design
+
+
 def _named(ledger, kinds, pattern):
     """The accounts of these types whose names match: "4010, 4020", or ""."""
     return ", ".join(a["number"] for a in ledger.accounts() if a["type"] in kinds and re.search(pattern, a["name"], re.I))
@@ -346,7 +453,7 @@ def _rolling12(ledger, name):
     return design
 
 
-SPECIAL = {"hotel": _hotel, "restaurant": _restaurant, "forecast": _forecast, "rolling12": _rolling12}
+SPECIAL = {"hotel": _hotel, "usali": _usali, "restaurant": _restaurant, "forecast": _forecast, "rolling12": _rolling12}
 
 
 def build(ledger, template, name):

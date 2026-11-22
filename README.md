@@ -6,6 +6,7 @@ drill-down to the transactions behind a number.
 ```
 =TQ.BALANCE(account, fromPeriod, [toPeriod], [subsidiary], [department], [class], [location], [filters])
 =TQ.ACCOUNTNAME(account)
+=TQ.LIST(kind, [filter], [fromPeriod], [toPeriod], [hideZero], [subsidiary], [show])   (spills, grows on refresh)
 ```
 
 - Balance sheet accounts return the balance at the end of the period.
@@ -648,6 +649,9 @@ report screen following the open sheet.
   month cell, the filters and a live number in turn and says what each does.
 
 **Hospitality and planning templates** (New report)
+- **USALI income statement by department (1.5.3):** each operated department with revenue, payroll and related,
+  other expenses and departmental profit (accounts under each line), undistributed expenses, GOP, net profit, and a
+  check against NetSuite's net profit; month and YTD against budget and last year, each with % of income.
 - **Hotel P&L (USALI summary):** revenue, departmental expenses and profit for Rooms, Food and Beverage, other
   operated departments and miscellaneous income; undistributed expenses (A&G, IT, sales and marketing,
   maintenance, utilities, HR); GOP and GOP %; non-operating; and occupancy, ADR and RevPAR when statistical

@@ -430,8 +430,20 @@
     });
   }
 
+  var LIST_FORMULA = { accounts: 'accounts', periods: 'periods', subsidiary: 'subsidiaries', department: 'departments',
+    'class': 'classes', location: 'locations' };
   function insertList(kind) {
     if (!needExcel()) return;
+    var live = $('listLive');
+    if (live && live.checked && LIST_FORMULA[kind]) {   // =TQ.LIST: spills down and is asked again on every refresh
+      Excel.run(function (context) {
+        context.workbook.getSelectedRange().getCell(0, 0).formulas = [['=TQ.LIST("' + LIST_FORMULA[kind] + '")']];
+        return context.sync();
+      }).then(function () {
+        say('Live list added. It spills down and grows on Refresh. Point other formulas at it with the cell and # (e.g. A10#).');
+      }).catch(function (e) { say(e.message, true); });
+      return;
+    }
     say('Loading…');
     listValues(kind)
       .then(function (values) {

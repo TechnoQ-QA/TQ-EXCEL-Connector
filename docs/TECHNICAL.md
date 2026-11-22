@@ -6,14 +6,14 @@ guide.
 
 | Part | Version (Nov 2026) |
 |---|---|
-| Connector (TQConnector.exe, `server/server.py` `VERSION`) | 1.5.2 |
-| Excel add-in (`addin/manifest.xml` `<Version>`) | 1.5.2.0 |
+| Connector (TQConnector.exe, `server/server.py` `VERSION`) | 1.5.3 |
+| Excel add-in (`addin/manifest.xml` `<Version>`) | 1.5.3.0 |
 | NetSuite script (`netsuite/tq_excel_core.js` `VERSION`) | 8 |
 | NetSuite package (SuiteCloud SDF project, `netsuite/sdf`) | deployed to Techno Q 12253116 and the sandbox 65987_SB1 |
 | NetSuite bundle (what customers install) | **715956** "TQ Excel Connector", in Techno Q's account 12253116 |
 | Sign-in integration (shared by every customer) | "TQ Excel Connector" in 12253116, Client ID `028fcb4f...b34f` (`DEFAULT_CLIENT_ID`) |
 | Source | private GitHub repository `TechnoQ-QA/TQ-EXCEL-Connector`, branch `main` |
-| Tests | 96 (`python -m unittest discover -s tests`) |
+| Tests | 98 (`python -m unittest discover -s tests`) |
 
 ---
 
@@ -146,7 +146,7 @@ works for accounts not moved yet. NetSuite retires TBA by 2027.
 | `netsuite/sdf/` | The SuiteCloud package: copies of the scripts plus object XML (script records, deployments, role) |
 | `installer/` | Inno Setup script, build script, signing script, Techno Q's public certificate, legacy PowerShell installer |
 | `scripts/` | Techno Q tools: licences, update signing, NetSuite package, icons, connection check, developer setup |
-| `tests/` | `test_server.py`: 96 tests (server, reports, layouts, templates, sign-in, seats, updates, package, care) |
+| `tests/` | `test_server.py`: 98 tests (server, reports, layouts, templates, sign-in, seats, updates, package, care) |
 | `docs/` | This document, the client IT install note, the panel mockup |
 | `build/` | Build output (not in Git): venv, PyInstaller output, staged app, setup file, checksum, certificate |
 
@@ -377,6 +377,7 @@ the same keys.
 | `TQ.BALANCE` | account, fromPeriod, [toPeriod], [subsidiary], [department], [class], [location], [filters] | Batched (50 ms window, up to 500 per request), de-duplicated, cached until a refresh. Errors per cell. |
 | `TQ.ACCOUNTNAME` | account | From the cached chart of accounts |
 | `TQ.PERIOD` | period, [shift] | Period name worked out from another: months (-1, 12) or CM, LY, FYS, FYE, QS, QE with +n/-n |
+| `TQ.LIST` | kind, [filter], [fromPeriod], [toPeriod], [hideZero], [subsidiary], [show] | Spills (matrix result). Action `list` (`ledger.list_rows`): accounts [number, name] (show: number/name), segments and periods [name]; filter = account list (`4000-4999`, `type:Expense`) or a name pattern (`Food*`); hideZero keeps accounts with a balance in the periods, segments with a P&L balance; periods are months only. Up to 2,000 rows; cached until a refresh. |
 | `TQ.SQL` | query, [p1]..[p4] | First value of a SuiteQL query, run with the user's own role; `?` takes the parameters |
 
 Relative periods anywhere a period is accepted: `CM` (current month), `CM-1`, `LY` (same month last year),
@@ -428,7 +429,20 @@ requests, answers and failures with their cells (for refresh progress and "refre
 
 Settings rows (column A name, column B value): Report title, Subsidiary / Department / Class / Location filter,
 Other filters, Dropdown filters, One sheet per (location, department, class, subsidiary), Show accounts,
-Report month, Highlight changes over, Comments column, **Comment needed over**, Highlight rules.
+Report month, Highlight changes over, Comments column, **Comment needed over**, Highlight rules, **Check line** (1.5.3,
+default yes).
+
+**% of a line (1.5.3).** A line whose Format has the word `base` is the base for the lines below it (until the next
+`base`); a column formula `[Month@base]` takes that column on the base line, `[Month@Total Revenue]` on a named line.
+
+**excluding (1.5.3).** An account list can leave accounts out: `type:COGS,Expense excluding 3000-3999`
+(`ledger.members`).
+
+**Check line (1.5.3).** The last row of a P&L or balance sheet report: per period column
+`TQ.BALANCE(every account of that kind) - TQ.BALANCE(the lines' account lists)`, with the report's filters, red when not 0.
+P&L layouts compare with `type:Income,OthIncome,COGS,Expense,OthExpense`, balance sheet layouts with the balance sheet
+types in the chart. A new account that no line takes shows up there. Not added for layouts with `move:`/`budget:` lines (cash
+flow), lines with their own filter (hotel), or `Check line: no` (`layouts.check_spec`).
 
 Lines table: `Section | Line | Type | Accounts or formula | Sign | Format`.
 - Type `accounts`: account numbers, ranges, `type:` groups, `calc:` totals. **A line can carry its own filter
@@ -657,7 +671,7 @@ Report wizard (New report) choices:
 | Group | Choices |
 |---|---|
 | Reports | Monthly P&L (month and YTD vs last year, rolls forward), P&L summary, P&L account by account, Budget against actual, Balance sheet (rolls forward), Cash flow, My own format (typed on a sheet) |
-| Hospitality | **Hotel P&L (USALI summary)**: Rooms / F&B / other operated departments / miscellaneous revenue and departmental expenses and profit, undistributed expenses (A&G, IT, sales and marketing, maintenance, utilities, HR), GOP, GOP %, non-operating, net profit; occupancy, ADR and RevPAR from statistical accounts named like Rooms Available / Rooms Sold. Departments found by name among top-level departments (numbers in front such as "22 Food & Beverage" are ignored). **Restaurant P&L**: food and beverage sales and costs (accounts found by name), labour (salary, wage, payroll, staff, GOSI...), prime cost, food cost %, beverage cost %, labour %, prime cost %, operating margin. |
+| Hospitality | **USALI P&L by Department** (`usali`, 1.5.3): per operated department (rooms, F&B, telecom, laundry, recreation/spa, parking, other, rental/misc; found by name like the hotel template) a `base` revenue line `type:Income | Department: X*`, payroll (Expense/COGS accounts whose name matches `templates.PAYROLL_RE`), other expenses `type:COGS,Expense excluding <payroll> | Department: X*`, departmental expenses and profit; Total Revenue (`base`), undistributed, GOP, non-operating, net profit, and a check against `calc:NetIncome`. Columns `usali_columns()`: Month, Month %, Budget, Budget %, Month last year, YTD, YTD %, YTD budget, YTD budget %, YTD last year, YTD last year %; `%` columns are `=[X]/[X@base]`. Show accounts on. **Hotel P&L (USALI summary)**: Rooms / F&B / other operated departments / miscellaneous revenue and departmental expenses and profit, undistributed expenses (A&G, IT, sales and marketing, maintenance, utilities, HR), GOP, GOP %, non-operating, net profit; occupancy, ADR and RevPAR from statistical accounts named like Rooms Available / Rooms Sold. Departments found by name among top-level departments (numbers in front such as "22 Food & Beverage" are ignored). **Restaurant P&L**: food and beverage sales and costs (accounts found by name), labour (salary, wage, payroll, staff, GOSI...), prime cost, food cost %, beverage cost %, labour %, prime cost %, operating margin. |
 | Planning | **Rolling forecast**: actual to date + forecast rest of year (budget category matching forecast/outlook, else the budget) = full-year outlook vs full-year budget. **Last 12 months**: 12 rolling months and total. |
 | Dashboards | Executive, Sales, Cash, Profit and loss, Financial position, Budget vs actual |
 | Operational reports | Receivables aging, Payables aging, Open invoices, Sales by customer, Sales by item, Purchases by vendor, Stock on hand (data tables) |
@@ -733,7 +747,7 @@ trust, add-in registration) to run the connector from source.
 ```
 python server/server.py --http --mock --port 3010     # browser preview with sample data
 python server/server.py                               # HTTPS on 3000 with server/config.json (needs setup-excel.ps1 once)
-python -m unittest discover -s tests                  # 96 tests
+python -m unittest discover -s tests                  # 98 tests
 python scripts/check_netsuite.py --period "Oct 2026"  # connection check; prints balances, never credentials
 python scripts/make_icons.py                          # regenerate icons
 ```

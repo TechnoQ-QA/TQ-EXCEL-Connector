@@ -839,7 +839,7 @@ class ChatService:
             "filters in B3:B7) and use Refresh this sheet; everything moves. The numbers come from the data block on "
             "the right of the sheet." % (info["sheet"], info["month"], info["charts"]))}
 
-    WIZARD_ROLLING = ("monthytd", "balance", "hotel", "restaurant", "forecast", "rolling12")   # follow a month cell
+    WIZARD_ROLLING = ("monthytd", "balance", "hotel", "usali", "restaurant", "forecast", "rolling12")   # follow a month cell
 
     def _wizard(self, context, args):
         """The report wizard: every report it makes is a layout, so it can be changed and rebuilt in place.
@@ -884,7 +884,7 @@ class ChatService:
         if isinstance(args.get("dropdowns"), list):
             design["dropdowns"] = [f["label"] for f in reports.dropdown_fields(self.ledger, args["dropdowns"])]
         design["pages"] = layouts.page_kind(arg_text(args, "pages"))
-        design["detail"] = bool(args.get("detail"))
+        design["detail"] = bool(args.get("detail")) if "detail" in args else bool(design.get("detail"))
         design["comments"] = bool(args.get("comments"))
         design["highlight"] = layouts.highlight_value(arg_text(args, "highlight"))
         design["commentAt"] = layouts.highlight_value(arg_text(args, "commentAt"))

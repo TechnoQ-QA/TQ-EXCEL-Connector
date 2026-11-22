@@ -117,7 +117,8 @@ def parse(name, rows, first_row=0):
             if key in ("section", "line", "type", "source", "sign", "format"):
                 line_cols.setdefault(key, at)
     design = {"name": name, "title": "", "filters": {}, "pages": "", "detail": False, "lines": [], "columns": [],
-              "dropdowns": [], "month": "", "highlight": 0.0, "comments": False, "rules": [], "commentAt": 0.0}
+              "dropdowns": [], "month": "", "highlight": 0.0, "comments": False, "rules": [], "commentAt": 0.0,
+              "check": True}
     for row in grid[:header]:
         key = row[0].lower() if row else ""
         key = "filters" if key in ("other filters", "other filter", "filters") else key.replace(" filter", "")
@@ -136,6 +137,8 @@ def parse(name, rows, first_row=0):
             design["highlight"] = highlight_value(value)
         elif key in ("comments column", "comments"):
             design["comments"] = value.lower() in ("yes", "y", "true", "1", "on")
+        elif key in ("check line", "check"):
+            design["check"] = value.lower() not in ("no", "n", "false", "0", "off")
         elif key in ("comment needed over", "ask for a comment over"):
             design["commentAt"] = highlight_value(value)
         elif key in ("highlight rules", "rules"):
@@ -233,6 +236,7 @@ def new_line(label, kind, source, sign="", fmt="", section="", where=None):
             raise ReportError('%s: after | comes a filter such as Department: Rooms (a field, a colon, the values).' % where)
     return {"section": _cell(section), "label": label, "kind": kind, "where": where, "filter": line_filter,
             "key": "key" in re.split(r"[,\s]+", _cell(fmt).lower()),
+            "base": "base" in re.split(r"[,\s]+", _cell(fmt).lower()),   # [Column@base] in the lines below it
             "source": _formula(source) if kind == "formula" else "" if kind == "subtotal" else source,
             "sign": -1 if _cell(sign).replace(" ", "").lower() in ("-1", "-", "minus", "negative", "neg") else 1,
             "format": number_format, "bold": bold}
@@ -269,8 +273,8 @@ def public(design):
         "pages": design.get("pages", ""), "detail": bool(design.get("detail")),
         "dropdowns": list(design.get("dropdowns") or []), "month": design.get("month", ""),
         "highlight": design.get("highlight") or 0, "comments": bool(design.get("comments")),
-        "rules": list(design.get("rules") or []),
-        "lines": [dict({k: line[k] for k in ("section", "label", "kind", "source", "sign", "format", "bold", "key")},
+        "rules": list(design.get("rules") or []), "check": design.get("check", True) is not False,
+        "lines": [dict({k: line.get(k, False) for k in ("section", "label", "kind", "source", "sign", "format", "bold", "key", "base")},
                        source=line["source"] + (" | " + line["filter"] if line.get("filter") else ""))
                   for line in design["lines"]],
         "commentAt": design.get("commentAt") or 0,
@@ -357,6 +361,10 @@ def check(ledger, design):
                 raise ReportError('%s: %s "%s" was not found in NetSuite.' % (column["where"], kind, value))
             column["filters"][kind] = known.get(value.lower(), value)
         for ref in REF_RE.findall(column["formula"]):
+            ref, _, at_line = ref.partition("@")
+            if at_line.strip() and at_line.strip().lower() != "base" and at_line.strip().lower() not in by_label:
+                raise ReportError('%s: the formula uses [%s@%s], but there is no line "%s".'
+                                  % (column["where"], ref, at_line, at_line.strip()))
             if ref.strip().lower() not in labels:
                 raise ReportError('%s: the formula uses [%s], which is not a column in the layout.'
                                   % (column["where"], ref))
@@ -517,6 +525,8 @@ def emit(design, activate=True):
     rows += [["Highlight rules", "; ".join(design.get("rules") or []), "",
               "Optional, separated by ;  e.g. 6100 > 5000 red; Net Profit < 0 red; all between -100 and 100 yellow; "
               "4000-4999 in Month < 10000 amber. Colours: red, yellow, amber, green, blue, grey."]]
+    rows += [["Check line", "yes" if design.get("check", True) else "no", "",
+              "yes adds a last line with the accounts that no line includes (should be 0; red when it is not)."]]
     rows += [[note] for note in NOTES] + [[], LINE_HEADERS + [""] + COLUMN_HEADERS]
     header = len(rows) - 1
     count = max(len(design["lines"]), len(design["columns"]), 1)
@@ -525,7 +535,7 @@ def emit(design, activate=True):
         if n < len(design["lines"]):
             line = design["lines"][n]
             words = (([line["format"]] if line["format"] != "number" else []) + (["bold"] if line["bold"] else [])
-                     + (["key"] if line.get("key") else []))
+                     + (["key"] if line.get("key") else []) + (["base"] if line.get("base") else []))
             row[:len(LINE_HEADERS)] = [line["section"], line["label"], line["kind"],
                                        line["source"] + (" | " + line["filter"] if line.get("filter") else ""),
                                        str(line["sign"]) if line["kind"] == "accounts" else "", " ".join(words)]
@@ -545,9 +555,9 @@ def emit(design, activate=True):
         "textRanges": [[0, 0, last, wide]],
         "formats": [
             {"r0": 0, "c0": 0, "r1": 0, "c1": wide, "bold": True, "size": 14},
-            {"r0": 1, "c0": 1, "r1": 13, "c1": 1, "bold": True},
-            {"r0": 6, "c0": 3, "r1": 13, "c1": 3, "color": GREY, "italic": True},
-            {"r0": 14, "c0": 0, "r1": header - 2, "c1": wide, "color": GREY, "italic": True},
+            {"r0": 1, "c0": 1, "r1": 15, "c1": 1, "bold": True},
+            {"r0": 6, "c0": 3, "r1": 15, "c1": 3, "color": GREY, "italic": True},
+            {"r0": 16, "c0": 0, "r1": header - 2, "c1": wide, "color": GREY, "italic": True},
             {"r0": header, "c0": 0, "r1": header, "c1": len(LINE_HEADERS) - 1, "bold": True, "fill": MAROON,
              "color": WHITE},
             {"r0": header, "c0": COLUMN_AT, "r1": header, "c1": wide, "bold": True, "fill": NAVY, "color": WHITE},
@@ -560,6 +570,44 @@ def emit(design, activate=True):
                    {"c0": COLUMN_AT + 9, "c1": COLUMN_AT + 9, "width": 220},
                    {"c0": COLUMN_AT + 10, "c1": wide, "width": 90}],
     }
+
+
+CHECK_LABEL = "Check: accounts not in this report (should be 0)"
+PL_TYPES_SPEC = "type:Income,OthIncome,COGS,Expense,OthExpense"
+
+
+def check_spec(ledger, design):
+    """(every account of the report's kind, the accounts its lines take) as account lists for TQ.BALANCE, or None.
+
+    A profit and loss layout is checked against every P&L account, a balance sheet layout against every balance
+    sheet account; a new account that no line takes shows up in the check line. No check for layouts with
+    movement or budget lines (a cash flow), with lines limited by their own filter (a hotel P&L by department), with
+    no accounts lines, or when the layout says Check line: no."""
+    if not design.get("check", True):
+        return None
+    tokens, covered = [], set()
+    for line in design["lines"]:
+        if line["kind"] != "accounts":
+            continue
+        prefix, _, token = ledger.split_prefix(line["source"])
+        if prefix or line.get("filter"):   # movement/budget lines, or a line limited to one department: no check
+            return None
+        if token.lower().startswith("calc:"):
+            continue
+        tokens.append(token)
+        covered.update(line.get("accounts") or [])
+    if not tokens or not covered:
+        return None
+    types = {a["number"]: a["type"] for a in ledger.accounts()}
+    kinds = {types.get(n) for n in covered}
+    if kinds & set(PL_SIGNS):
+        every = PL_TYPES_SPEC
+    else:
+        bs = [t for t in ledger_module.ACCOUNT_TYPES if t not in PL_SIGNS and t not in ledger_module.STAT_TYPES]
+        if not kinds <= set(bs):
+            return None
+        every = "type:" + ",".join(t for t in bs if t in set(types.values()))
+    return every, ", ".join(tokens)
 
 
 def _coverage(ledger, design):
@@ -893,6 +941,10 @@ def build_report(ledger, design, page=None):
         uses_days = any(line["kind"] == "formula" and DAYS_RE.search(REF_RE.sub("", line["source"])) for line in lines)
         days_row = row + 1
         row_of = {line["label"].lower(): line["row"] for line in lines}
+        base_row = None   # the line marked "base" that [Column@base] divides by, until the next one
+        for line in lines:
+            base_row = line["row"] if line.get("base") else base_row
+            line["base_row"] = base_row
         col_of = {c["label"].lower(): j for j, c in enumerate(columns)}
         letter = lambda j: col_letter(2 + j)  # noqa: E731
 
@@ -914,10 +966,14 @@ def build_report(ledger, design, page=None):
                 account = '"%s:"&%s' % (data.lower(), account)
             return "TQ.BALANCE(%s,%s$%d,%s$%d,%s)" % (account, letter(j), from_row, letter(j), to_row, ",".join(args))
 
-        def across(j, at):   # a column's formula, for the line on sheet row `at`
+        def across(j, at, base=None):   # a column's formula, for the line on sheet row `at`
+            def ref(text):   # [Month] this line; [Month@base] the line marked base above it; [Month@Line] that line
+                name, _, where = text.partition("@")
+                where = where.strip().lower()
+                row = at if not where else base if where == "base" else row_of.get(where)
+                return "%s%d" % (letter(col_of[name.strip().lower()]), row) if row else '""'
             parts = REF_RE.split(columns[j]["formula"][1:])
-            return "".join("%s%d" % (letter(col_of[p.strip().lower()]), at) if n % 2 else p
-                           for n, p in enumerate(parts))
+            return "".join(ref(p) if n % 2 else p for n, p in enumerate(parts))
 
         def down(line, j):   # a line's formula, in column j
             parts = REF_RE.split(line["source"][1:])
@@ -929,11 +985,11 @@ def build_report(ledger, design, page=None):
             if column["type"] == "formula":
                 if column["format"] == "percent" and line["format"] == "percent":
                     return ""  # no "change %" of a percentage
-                return '=IFERROR(%s,"")' % across(j, at)
+                return '=IFERROR(%s,"")' % across(j, at, line.get("base_row"))
             if line["kind"] == "formula":
                 return '=IFERROR(%s,"")' % down(line, j)
             if column["type"] == "total":
-                return '=IFERROR(%s,"")' % across(j, at)
+                return '=IFERROR(%s,"")' % across(j, at, line.get("base_row"))
             if line["kind"] == "accounts":
                 return "=%s%s" % ("-" if line["sign"] < 0 else "", balance("$A%d" % at, j, line.get("filter", "")))
             added = [l["row"] for l in line["adds"]]
@@ -977,7 +1033,7 @@ def build_report(ledger, design, page=None):
                     if column["type"] == "period":
                         cells.append("=%s%s" % ("-" if line["sign"] < 0 else "", balance("$A%d" % row, j, line.get("filter", ""))))
                     else:
-                        cells.append('=IFERROR(%s,"")' % across(j, row))
+                        cells.append('=IFERROR(%s,"")' % across(j, row, line.get("base_row")))
                 add([number, name] + cells, color=GREY)
                 extra.append({"r0": row - 1, "c0": 1, "r1": row - 1, "c1": 1, "indent": 3})
             if line.get("detail"):
@@ -989,6 +1045,21 @@ def build_report(ledger, design, page=None):
             at = add(["", "Days in period"] + ["=" + balance('"calc:Days"', j) if c["from"] else ""
                                                for j, c in enumerate(columns)], color=GREY, italic=True)
             assert at == days_row
+        check_row = None
+        spec = check_spec(ledger, design)
+        if spec:   # what no line includes: P&L (or balance sheet) accounts minus the lines' accounts, per column
+            every, covered = ('"%s"' % s.replace('"', '""') for s in spec)
+            add([])
+            check_row = len(rows) + 1
+            cells = []
+            for j, c in enumerate(columns):
+                if c["type"] == "period" and c["from"]:
+                    cells.append('=IFERROR(%s-%s,"")' % (balance(every, j), balance(covered, j)))
+                elif c["type"] == "total":
+                    cells.append('=IFERROR(%s,"")' % across(j, check_row))
+                else:
+                    cells.append("")
+            add(["", CHECK_LABEL] + cells, italic=True, color=GREY, top="thin")
         if len(rows) * width > reports.MAX_CELLS:
             raise ReportError("That report would be %d cells, more than this builds in one go. "
                               "Use fewer columns." % (len(rows) * width))
@@ -1042,6 +1113,12 @@ def build_report(ledger, design, page=None):
                     "formula": '=AND(ISNUMBER($%s%d),ABS($%s%d)>=%g,LEN(TRIM(%s%d))=0,LEN($B%d)>0)' % (
                         at, first_data, at, first_data, limit, me, first_data, first_data),
                     "fill": "#FFF4CE", "font": "#7A5B00"})
+        if check_row:   # the check turns red when it is not zero
+            first_col = col_letter(2)
+            action.setdefault("conditional", []).append({
+                "r0": check_row - 1, "c0": 2, "r1": check_row - 1, "c1": width - 1,
+                "formula": "=AND(ISNUMBER(%s%d),ABS(%s%d)>=0.005)" % (first_col, check_row, first_col, check_row),
+                "fill": "#FDE7E9", "font": "#A4262C"})
         years = sorted({int(y) for p in ledger.periods() for y in YEAR_RE.findall(p["name"])})
         if year and 1 < len(years) <= 30:
             action["dropdowns"].append({"r": 7, "c": 1, "formula": ",".join(str(y) for y in years)})

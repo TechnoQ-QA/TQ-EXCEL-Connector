@@ -289,6 +289,7 @@
     { id: 'cashflow', group: 'Reports', title: 'Cash flow', about: 'Indirect method, month by month, checked against the bank accounts.' },
     { id: 'own', group: 'Reports', title: 'My own format', about: 'Typed on a sheet: its rows become the report lines.' },
     { id: 'hotel', group: 'Hospitality', title: 'Hotel P&L (USALI summary)', about: 'Rooms, F&B and other operated departments, undistributed expenses, GOP and GOP %, with occupancy, ADR and RevPAR when the statistics are in NetSuite. Rolls forward.', rolling: true },
+    { id: 'usali', group: 'Hospitality', title: 'USALI income statement by department', about: 'Each operated department (Rooms, F&B, Telecom, Laundry, Recreation, Rental) with revenue, payroll, other expenses and departmental profit, then undistributed expenses, GOP and net profit, with the accounts under each line. Month and YTD against budget and last year, with % of income. Rolls forward.', rolling: true },
     { id: 'restaurant', group: 'Hospitality', title: 'Restaurant P&L', about: 'Food and beverage sales, food cost %, beverage cost %, labour %, prime cost and operating profit. Rolls forward.', rolling: true },
     { id: 'forecast', group: 'Planning', title: 'Rolling forecast (outlook)', about: 'Actual so far this year plus the forecast for the months left, the full-year outlook against the budget. Rolls forward.', rolling: true },
     { id: 'rolling12', group: 'Planning', title: 'Last 12 months', about: 'The twelve months up to the report month, side by side, with the total. Rolls forward.', rolling: true },
@@ -367,6 +368,7 @@
       if (k.group !== group) { group = k.group; list.appendChild(el('div', group, 'group-title')); }
       var b = button('', function () {
         w.kind = k;
+        w.detail = k.id === 'usali';   // the USALI statement lists the accounts under each line, as NetSuite's does
         if (k.id === 'own') {   // made from a sheet: the layout screen does that
           $('dTemplate').value = '(sheet)';
           $('dTemplate').dispatchEvent(new Event('change'));

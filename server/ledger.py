@@ -27,6 +27,7 @@ answers period questions (fiscal year, quarter) for the reports and the chat.
 """
 
 import datetime
+import fnmatch
 import re
 import threading
 import time
@@ -46,6 +47,7 @@ ACCOUNT_TYPES = (
 )
 STAT_TYPES = {"Stat"}   # statistical accounts: units such as covers or headcount, per period
 _TYPE_BY_LOWER = {t.lower(): t for t in ACCOUNT_TYPES}
+EXCLUDING_RE = re.compile(r"\s+(excluding|except)\s+", re.I)   # "type:Expense excluding 8100-8199"
 PREFIX_RE = re.compile(r"^(budget|move)(?:\(([^)]*)\))?:\s*(.+)$", re.I | re.S)
 PERIOD_EXPR_RE = re.compile(r"(CM|LY|FYS|FYE|QS|QE)?([+-]\d{1,3})?", re.I)
 RANGE_RE = re.compile(r"^([\w.]+)\s*(?:\.\.|-)\s*([\w.]+)$")
@@ -180,8 +182,16 @@ class Ledger:
         return lowered not in self._numbers()  # an account number may itself contain a dash
 
     def members(self, token):
-        """Account numbers named by '4000, 4100-4199, type:COGS'. Raises LedgerError."""
+        """Account numbers named by '4000, 4100-4199, type:COGS'; 'type:Expense excluding 8100-8199' leaves the
+        accounts after "excluding" out (so a new account still lands in the first part). Raises LedgerError."""
         numbers, accounts = self._numbers(), self.accounts()
+        split = EXCLUDING_RE.split(text(token), maxsplit=1)
+        if len(split) == 3:   # [head, the word, tail]
+            head, word, tail = split
+            if not head.strip():
+                raise LedgerError('"%s": put the accounts before "%s"' % (text(token), word))
+            drop = set(self.members(tail)) if tail.strip() else set()
+            return [n for n in self.members(head) if n not in drop]
         if text(token).lower() in numbers:
             return [numbers[text(token).lower()]]
         found, in_types = [], False
@@ -481,6 +491,70 @@ class Ledger:
         return {"ok": True, "rows": rows, "total": round(sum(r["amount"] for r in rows), 2),
                 "kind": prefix or "actual"}
 
+    LIST_KINDS = {"accounts": "accounts", "account": "accounts", "periods": "periods", "period": "periods",
+                  "subsidiaries": "subsidiary", "subsidiary": "subsidiary", "departments": "department",
+                  "department": "department", "classes": "class", "class": "class", "locations": "location",
+                  "location": "location"}
+    LIST_MAX = 2000
+
+    def list_rows(self, payload):
+        """=TQ.LIST: the rows of a list that grows by itself (it is worked out again on every refresh).
+
+        payload: kind (accounts, departments, classes, locations, subsidiaries, periods), filter (accounts:
+        "4000-4999", "type:Expense", "61*"; others: a name or "Food*"), fromPeriod/toPeriod (periods: the range;
+        with hideZero: the periods whose balance decides), hideZero, subsidiary, show (accounts: both, number,
+        name). Returns rows: accounts [number, name] (or one of them), the others [name]."""
+        kind = self.LIST_KINDS.get(text(payload.get("kind")).lower())
+        if not kind:
+            raise LedgerError('TQ.LIST: say which list, one of accounts, departments, classes, locations, '
+                              'subsidiaries or periods (not "%s")' % text(payload.get("kind")))
+        wanted = text(payload.get("filter"))
+        first, last = text(payload.get("fromPeriod")), text(payload.get("toPeriod"))
+        hide = str(payload.get("hideZero")).lower() in ("true", "1", "yes", "y")
+
+        def like(value):   # a name filter: "Food*" from the start, "*bar" anywhere, plain words anywhere
+            if not wanted:
+                return True
+            if "*" in wanted or "?" in wanted:
+                return fnmatch.fnmatchcase(value.lower(), wanted.lower())
+            return wanted.lower() in value.lower()
+
+        if kind == "periods":
+            periods = self.periods()
+            lo = self.period_index(first) if first else 0
+            hi = self.period_index(last) if last else len(periods) - 1
+            lo, hi = min(lo, hi), max(lo, hi)
+            names = [p["name"] for p in periods[lo:hi + 1]
+                     if 20 < (p["end"] - p["start"]).days < 40 and like(p["name"])]   # months only
+            return [[n] for n in names[:self.LIST_MAX]]
+        if hide and not first:
+            raise LedgerError("TQ.LIST: to leave out the ones with no balance, give the from period too")
+        period = {"fromPeriod": first, "toPeriod": last or first}
+        extra = {"subsidiary": text(payload.get("subsidiary"))} if text(payload.get("subsidiary")) else {}
+        if kind == "accounts":
+            accounts = [a for a in self.accounts() if a["type"] not in STAT_TYPES]
+            if wanted and "*" not in wanted and "?" not in wanted:
+                keep = set(self.members(wanted))
+                found = [a for a in accounts if a["number"] in keep]
+            else:
+                found = [a for a in accounts if like(a["number"]) or like(a["name"])]
+            if hide and found:
+                values = self.balances([dict(period, account=a["number"], **extra) for a in found])
+                errors = [v["error"] for v in values if "error" in v]
+                if errors:
+                    raise LedgerError(errors[0])
+                found = [a for a, v in zip(found, values) if abs(v.get("value") or 0) >= 0.005]
+            show = text(payload.get("show")).lower()
+            cut = (lambda a: [a["number"]]) if show == "number" else (lambda a: [a["name"]]) if show == "name" \
+                else (lambda a: [a["number"], a["name"]])
+            return [cut(a) for a in found[:self.LIST_MAX]]
+        names = [n for n in self.segments(kind) if like(n)]
+        if hide and names:   # the ones with a profit and loss balance in the periods
+            values = self.balances([dict(period, account="type:Income,OthIncome,COGS,Expense,OthExpense",
+                                         **dict(extra, **{kind: n})) for n in names])
+            names = [n for n, v in zip(names, values) if "error" not in v and abs(v.get("value") or 0) >= 0.005]
+        return [[n] for n in names[:self.LIST_MAX]]
+
     def handle(self, payload):
         """What POST /api calls: totals handled here, the rest passed through."""
         action = payload.get("action")
@@ -496,6 +570,8 @@ class Ledger:
                     and self._needs_new_scripts(payload["request"]) and self.setup()["version"] < 2:
                 raise LedgerError("This filter needs the newer NetSuite scripts (tq_excel_core.js version 2). "
                                   "Ask your administrator to update them.")
+            if action == "list":
+                return {"ok": True, "rows": self.list_rows(payload)}
             if action == "balances" and isinstance(payload.get("requests"), list):
                 return {"ok": True, "results": self.balances(payload["requests"])}
             if action == "breakdown" and isinstance(payload.get("request"), dict):

@@ -619,6 +619,49 @@ class LayoutTest(unittest.TestCase):
             server.MOCK_SEGMENTS.clear()
             server.MOCK_SEGMENTS.update(saved)
 
+    def test_usali_income_statement_by_department(self):
+        """The detailed USALI statement: per department revenue, payroll, other expenses and profit; % of income
+        against the department's own revenue; a check against NetSuite's net profit."""
+        saved = dict(server.MOCK_SEGMENTS)
+        server.MOCK_SEGMENTS["department"] = ["11 Rooms Division", "22 Food & Beverage", "22 Food & Beverage : Kitchen",
+                                              "33 Guest Laundry", "55 A&G", "77 Sales and Marketing"]
+        try:
+            ledger = new_ledger()
+            chat = server.chat_module.ChatService(ledger)
+            out = chat.design({"op": "wizard", "args": {"template": "usali", "month": "Oct 2026"},
+                               "context": {"layouts": [], "sheets": []}})
+            self.assertTrue(out["ok"], out.get("error"))
+            layout = [a for a in out["actions"] if a["sheetName"].startswith("TQ Layout")][0]
+            parsed = server.chat_module.layouts.parse(layout["sheetName"], layout["rows"])
+            labels = [l["label"] for l in parsed["lines"]]
+            for want in ("Rooms Revenue", "Rooms Payroll and Related", "Rooms Other Expenses", "Rooms Departmental Profit",
+                         "Food and Beverage Revenue", "Guest Laundry Revenue", "Total Revenue", "Administrative and General",
+                         "Gross Operating Profit", "Net Profit", "Difference (should be 0)"):
+                self.assertIn(want, labels)
+            other = [l for l in parsed["lines"] if l["label"] == "Rooms Other Expenses"][0]
+            self.assertTrue(other["source"].startswith("type:COGS,Expense excluding 6000"))   # Salaries and Wages
+            self.assertEqual(other["filter"], "Department: 11 Rooms Division*")
+            self.assertTrue([l for l in parsed["lines"] if l["label"] == "Rooms Revenue"][0]["base"])
+            self.assertEqual([c["label"] for c in parsed["columns"]][:4], ["Month", "Month %", "Budget", "Budget %"])
+            self.assertTrue(parsed["detail"])
+            report = [a for a in out["actions"] if a["sheetName"] == "USALI P&L by Department"][0]
+            rows = report["rows"]
+            at = lambda label: [n for n, r in enumerate(rows) if r[1] == label and r[2]][0] + 1  # noqa: E731  (not a heading)
+            rev, pay, total = at("Rooms Revenue"), at("Rooms Payroll and Related"), at("Total Revenue")
+            self.assertEqual(rows[pay - 1][3], '=IFERROR(C%d/C%d,"")' % (pay, rev))        # % of the department's revenue
+            self.assertEqual(rows[total - 1][3], '=IFERROR(C%d/C%d,"")' % (total, total))  # the total is its own base
+            gop = at("Gross Operating Profit")
+            self.assertEqual(rows[gop - 1][3], '=IFERROR(C%d/C%d,"")' % (gop, total))
+            # "excluding": a new expense account still lands in Other Expenses, payroll never twice
+            everything = set(ledger.members("type:COGS,Expense"))
+            rest = set(ledger.members("type:COGS,Expense excluding 6000"))
+            self.assertEqual(everything - rest, {"6000"})
+            with self.assertRaises(server.ledger_module.LedgerError):
+                ledger.members(" excluding 6000")
+        finally:
+            server.MOCK_SEGMENTS.clear()
+            server.MOCK_SEGMENTS.update(saved)
+
     def test_comment_needed_marking(self):
         made = self.chat.design({"op": "wizard", "args": {"template": "monthytd", "month": "Oct 2026", "comments": True},
                                  "context": {"layouts": [], "sheets": []}})
@@ -864,7 +907,8 @@ class LayoutTest(unittest.TestCase):
         report = out["actions"][1]
         book_rows = report["rows"]
         rent = next(n for n, r in enumerate(book_rows) if r[0] == "6000")
-        rules = report["conditional"]
+        check_at = next(n for n, r in enumerate(book_rows) if r[1] == server.chat_module.layouts.CHECK_LABEL)
+        rules = [c for c in report["conditional"] if c["r0"] != check_at]   # the check line's own red rule apart
         self.assertEqual({(c["r0"], c["r1"]) for c in rules}, {(rent, rent)})
         self.assertEqual(rules[0]["formula"], "=AND(ISNUMBER(C%d),C%d>5000.0)" % (rent + 1, rent + 1))
         self.assertEqual((rules[0]["font"], rules[0]["fill"]), ("#B3261E", "#FCE8E6"))
@@ -916,12 +960,60 @@ class LayoutTest(unittest.TestCase):
         self.assertEqual(len([c for c in out["design"]["columns"] if c.get("data") != "budget"]) >= 1, True)
         self.assertIn("Jan 2026", " ".join(str(c) for c in out["design"]["columns"]))
 
+    def test_list_that_grows(self):
+        """=TQ.LIST: the rows come from NetSuite on every refresh, filtered, optionally without zero balances."""
+        rows = lambda **p: self.ledger.handle(dict(p, action="list"))  # noqa: E731
+        everything = rows(kind="accounts")["rows"]
+        self.assertIn(["6100", "Rent"], everything)
+        self.assertEqual(rows(kind="accounts", filter="6000-6999")["rows"],
+                         [["6000", "Salaries and Wages"], ["6100", "Rent"], ["6200", "Marketing"]])
+        self.assertEqual(rows(kind="accounts", filter="type:Income", show="number")["rows"], [["4000"], ["4100"]])
+        self.assertEqual(rows(kind="accounts", filter="Rent*")["rows"], [["6100", "Rent"]])
+        self.assertEqual(rows(kind="Departments")["rows"], [["Sales"], ["Operations"], ["Finance"]])
+        self.assertEqual(rows(kind="periods", fromPeriod="Nov 2025", toPeriod="Feb 2026")["rows"],
+                         [["Nov 2025"], ["Dec 2025"], ["Jan 2026"], ["Feb 2026"]])
+        some = rows(kind="accounts", fromPeriod="Jan 2026", toPeriod="Mar 2026", hideZero=True)["rows"]
+        self.assertTrue(0 < len(some) <= len(everything))
+        self.assertIn("give the from period", rows(kind="accounts", hideZero=True)["error"])
+        self.assertIn("say which list", rows(kind="customers")["error"])
+
+    def test_check_line_against_the_ledger(self):
+        """Every P&L / balance sheet report ends with the accounts no line takes (0 when the report is complete)."""
+        layouts = server.chat_module.layouts
+        out = self.ask("monthly P&L for Oct 2026")
+        report = next(a for a in out["actions"] if a["sheetName"] == "Monthly P&L")
+        row = next(r for r in report["rows"] if r[1] == layouts.CHECK_LABEL)
+        self.assertIn('TQ.BALANCE("%s"' % layouts.PL_TYPES_SPEC, row[2])
+        self.assertIn('-TQ.BALANCE("4000, 4100', row[2])
+        design = layouts.parse("TQ Layout", out["actions"][0]["rows"])
+        layouts.check(self.ledger, design)
+        every, covered = layouts.check_spec(self.ledger, design)
+        self.assertTrue(set(self.ledger.members(covered)) <= set(self.ledger.members(every)))   # both lists resolve
+        self.assertIn(["Check line", "yes"], [r[:2] for r in out["actions"][0]["rows"]])
+        # switched off on the layout sheet: no check line
+        rows = [list(r) for r in out["actions"][0]["rows"]]
+        next(r for r in rows if r[0] == "Check line")[1] = "no"
+        design = layouts.parse("TQ Layout", rows)
+        self.assertFalse(design["check"])
+        layouts.check(self.ledger, design)
+        self.assertIsNone(layouts.check_spec(self.ledger, design))
+        # a balance sheet is checked against the balance sheet accounts; a cash flow (movement lines) is not checked
+        bs = self.chat.design({"op": "wizard", "args": {"template": "balance", "month": "Dec 2025"},
+                               "context": {"layouts": [], "sheets": []}})
+        row = next((r for r in bs["actions"][1]["rows"] if r[1] == layouts.CHECK_LABEL), None)
+        if row is not None:
+            self.assertIn('"type:Bank', row[2])
+            self.assertNotIn("Income", row[2].split("-TQ.BALANCE")[0])
+        cf = self.chat.design({"op": "wizard", "args": {"template": "cashflow", "year": 2025},
+                               "context": {"layouts": [], "sheets": []}})
+        self.assertFalse(any(r[1] == layouts.CHECK_LABEL for r in cf["actions"][1]["rows"]))
+
     def test_variance_highlights_and_comments(self):
         out = self.ask("monthly P&L for Oct 2026")
         layout = out["actions"][0]["rows"]
         out = self.ask("highlight changes over 10%", rows=layout)
         report = next(a for a in out["actions"] if a["sheetName"] == "Monthly P&L")
-        self.assertEqual([c["c0"] for c in report["conditional"]], [5, 9])          # Change % and Change % YTD
+        self.assertEqual([c["c0"] for c in report["conditional"]][:2], [5, 9])      # Change % and Change % YTD
         self.assertEqual(report["conditional"][0]["limit"], 0.1)
         self.assertTrue(report["conditional"][0]["cell"].startswith("F"))
         self.assertIn(["Highlight changes over", "10%"], [r[:2] for r in out["actions"][0]["rows"]])
@@ -933,7 +1025,9 @@ class LayoutTest(unittest.TestCase):
         parsed = server.chat_module.layouts.parse("TQ Layout", out["actions"][0]["rows"])
         self.assertEqual((parsed["highlight"], parsed["comments"]), (10.0, True))
         off = self.ask("no highlights", rows=out["actions"][0]["rows"])
-        self.assertNotIn("conditional", next(a for a in off["actions"] if a["sheetName"] == "Monthly P&L"))
+        sheet = next(a for a in off["actions"] if a["sheetName"] == "Monthly P&L")
+        check_at = next(n for n, r in enumerate(sheet["rows"]) if r[1] == server.chat_module.layouts.CHECK_LABEL)
+        self.assertEqual([c["r0"] for c in sheet.get("conditional", [])], [check_at])   # only the check line's rule
         self.assertEqual(server.chat_module.layouts.highlight_value("0.15"), 15.0)
         with self.assertRaises(server.chat_module.reports.ReportError):
             server.chat_module.layouts.highlight_value("lots")
@@ -995,7 +1089,7 @@ class LayoutTest(unittest.TestCase):
 
     def test_templates_build_reports(self):
         listed = self.chat.design({"op": "templates"})["templates"]
-        self.assertEqual([t["id"] for t in listed], ["monthytd", "management", "summary", "balance", "cashflow", "hotel", "restaurant", "forecast", "rolling12"])
+        self.assertEqual([t["id"] for t in listed], ["monthytd", "management", "summary", "balance", "cashflow", "hotel", "usali", "restaurant", "forecast", "rolling12"])
         for template in ("monthytd", "summary", "balance", "cashflow"):
             out = self.chat.design({"op": "new", "args": {"template": template}, "context": {"sheets": []}})
             self.assertTrue(out["ok"], out)
@@ -1770,7 +1864,9 @@ class SignInTest(unittest.TestCase):
         verifier = token_call[1]["code_verifier"]
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
         self.assertEqual(challenge, query["code_challenge"])   # PKCE: the code came back to the PC that asked
-        self.assertNotIn("R1", open(os.path.join(self.folder, "session.json"), encoding="utf-8").read())  # encrypted
+        stored = json.loads(open(os.path.join(self.folder, "session.json"), encoding="utf-8").read())
+        self.assertNotEqual(stored.get("refresh"), "R1")                                    # encrypted
+        self.assertNotIn('"R1"', json.dumps(stored))
         session.remember_user("Zubair", "Administrator")
         self.assertEqual(session.info()["user"], "Zubair")
         self.assertEqual(session.token(), "A1")
