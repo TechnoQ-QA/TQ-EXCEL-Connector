@@ -11,7 +11,7 @@ const BUNDLE = '715956';
 const body = [
   ...c.cover('Installation Guide', 'A new client in three steps: install the bundle, run the setup, sign in',
     ['Version 1.5  ·  November 2026', 'For: the client’s NetSuite administrator, IT and users',
-      'NetSuite bundle ' + BUNDLE + '  ·  Connector 1.5.3']),
+      'NetSuite bundle ' + BUNDLE + '  ·  Connector 1.5.4']),
   ...c.toc(),
 
   // ------------------------------------------------------------------ 1
@@ -187,7 +187,7 @@ const body = [
     ['No TQ Connector tab in Excel', 'Restart Excel. Company policy may block add-ins: ask IT.'],
     ['"Not signed in"', 'Click **Sign in with NetSuite**.'],
     ['NetSuite says the integration is not found or disabled', 'Check OAuth 2.0 is ticked (2.1) and the bundle is installed (2.2).'],
-    ['"None of your NetSuite roles may run financial reports"', 'Give the user the TQ Excel User role and sign in with it.'],
+    ['"The NetSuite role you signed in with may not run financial reports"', 'Give the user the TQ Excel User role and sign in with it.'],
     ['"No licence" on a user’s PC', 'The administrator signs in once with the licence (3.2), or pastes it on Setup > Licence.'],
     ['All seats are in use', 'Setup > Seats: release unused seats, or ask Techno Q to extend the licence.'],
     ['Figures differ from NetSuite', 'Check the same month, subsidiary and filters; drill down; send Techno Q the diagnostics.'],

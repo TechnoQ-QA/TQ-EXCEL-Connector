@@ -17,7 +17,7 @@
  * @NApiVersion 2.1
  * @NScriptType Restlet
  */
-define(['N/https', 'N/query', 'N/search'], (https, query, search) => {
+define(['N/https', 'N/query', 'N/runtime', 'N/search'], (https, query, runtime, search) => {
   const ACTIONS = ['searchList', 'searchRun', 'sql', 'tableColumns'];
   const MAX_ROWS = 20000;
   const DEFAULT_ROWS = 5000;
@@ -157,7 +157,8 @@ define(['N/https', 'N/query', 'N/search'], (https, query, search) => {
         deploymentId: 'customdeploy_tq_excel_elevated',
         method: https.Method.POST,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request)
+        // the role the caller signed in with (this RESTlet runs as that role): the elevated script checks only it
+        body: JSON.stringify(Object.assign({}, request, { callerRole: Number(runtime.getCurrentUser().role) }))
       });
       return JSON.parse(response.body);
     } catch (e) {

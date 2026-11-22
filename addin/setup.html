@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>TQ Connector setup</title>
-  <link rel="stylesheet" href="panel.css?v=153" />
+  <link rel="stylesheet" href="panel.css?v=154" />
   <style>
     body { display: block; height: auto; min-height: 100%; }
     .setup { display: grid; grid-template-columns: 200px minmax(0, 1fr); align-content: start; min-height: 100vh; }
@@ -83,6 +83,7 @@
         </div>
         <div id="state" class="box">Reading the current settings…</div>
         <div class="box" id="certState" hidden></div>
+        <div class="box warn" id="problemsBox" role="status" hidden></div>
         <h3 style="margin-top:18px">Support</h3>
         <p class="hint">Something not working? Save diagnostics makes a small zip (versions, status, settings without any
           password or key, the connector's log) in Documents\TQ Connector, ready to email to Techno Q.</p>
@@ -193,6 +194,6 @@
     <button id="save" class="btn primary">Save and test the connection</button>
   </div>
 
-  <script src="setup.js?v=153"></script>
+  <script src="setup.js?v=154"></script>
 </body>
 </html>

@@ -44,7 +44,7 @@ define(['N/query', 'N/runtime', 'N/search', 'N/record', 'N/file', 'N/config'], (
     class: { table: 'classification', feature: 'CLASSES', column: 'tl.class' },
     location: { table: 'location', feature: 'LOCATIONS', column: 'tl.location' }
   };
-  const VERSION = 8;   // 3 budgets; 4 statistical accounts, Book/Currency, journals, seats; 5 branding; 6 seats per user; 7 report library; 8 licence in NetSuite
+  const VERSION = 9;   // 3 budgets; 4 statistical accounts, Book/Currency, journals, seats; 5 branding; 6 seats per user; 7 report library; 8 licence in NetSuite; 9 checks only the signed-in role
   const MAX_BATCH = 2000;
   const EXTRA_FIELDS = {
     name: { column: 'COALESCE(tl.entity, t.entity)', label: 'Name' },
@@ -603,22 +603,27 @@ define(['N/query', 'N/runtime', 'N/search', 'N/record', 'N/file', 'N/config'], (
    * check replaces those permissions: the caller must hold a role that is
    * allowed to run financial reports.
    */
+  /* Version 9: every check looks at the role the caller signed in with (user.role, sent by the RESTlet), and that
+   * role must really be one of theirs; not at any role they hold. A permission set to None does not count. */
+  const ROLE_WHERE = 'WHERE er.entity = ? AND er.role = ? ';
+  const roleArgs = (user) => [Number(user.id), Number(user.role)];
+
   const assertReportAccess = (user) => {
     let found;
     try {
       found = rows(
         'SELECT COUNT(*) AS n FROM employeerolesforsearch er ' +
           'LEFT JOIN rolepermissions rp ON rp.role = er.role ' +
-          "AND rp.permkey IN ('" + REPORT_PERMISSIONS.join("','") + "') " +
-          'WHERE er.entity = ? AND (er.role = ' + ADMINISTRATOR_ROLE + ' OR rp.permkey IS NOT NULL)',
-        [Number(user.id)]
+          "AND rp.permkey IN ('" + REPORT_PERMISSIONS.join("','") + "') AND rp.permlevel >= 1 " +
+          ROLE_WHERE + 'AND (er.role = ' + ADMINISTRATOR_ROLE + ' OR rp.permkey IS NOT NULL)',
+        roleArgs(user)
       );
     } catch (e) {
       // Role tables are unreadable unless the Suitelet really runs as Administrator.
       throw new Error('Cannot check report access. Deploy the elevated Suitelet with Execute As Role = Administrator.');
     }
     if (!found.length || Number(found[0].n) < 1) {
-      throw new Error('None of your NetSuite roles may run financial reports');
+      throw new Error('The NetSuite role you signed in with may not run financial reports. Sign in again with a role that may (for example TQ Excel User).');
     }
   };
 
@@ -633,8 +638,8 @@ define(['N/query', 'N/runtime', 'N/search', 'N/record', 'N/file', 'N/config'], (
       const found = rows(
         'SELECT COUNT(*) AS n FROM employeerolesforsearch er LEFT JOIN rolepermissions rp ON rp.role = er.role ' +
           "AND rp.permkey IN ('" + BUDGET_PERMISSIONS.join("','") + "') AND rp.permlevel >= 2 " +
-          'WHERE er.entity = ? AND (er.role = ' + ADMINISTRATOR_ROLE + ' OR rp.permkey IS NOT NULL)',
-        [Number(user.id)]
+          ROLE_WHERE + 'AND (er.role = ' + ADMINISTRATOR_ROLE + ' OR rp.permkey IS NOT NULL)',
+        roleArgs(user)
       );
       return found.length > 0 && Number(found[0].n) > 0;
     } catch (e) {
@@ -846,6 +851,7 @@ define(['N/query', 'N/runtime', 'N/search', 'N/record', 'N/file', 'N/config'], (
 
   const isAdministrator = (user) => {
     try {
+      if (Number(user.role) !== ADMINISTRATOR_ROLE) return false;   // signed in with another role
       const found = rows('SELECT COUNT(*) AS n FROM employeerolesforsearch WHERE entity = ? AND role = ' + ADMINISTRATOR_ROLE,
         [Number(user.id)]);
       return found.length > 0 && Number(found[0].n) > 0;
@@ -976,8 +982,8 @@ define(['N/query', 'N/runtime', 'N/search', 'N/record', 'N/file', 'N/config'], (
       const found = rows(
         'SELECT COUNT(*) AS n FROM employeerolesforsearch er LEFT JOIN rolepermissions rp ON rp.role = er.role ' +
           "AND rp.permkey IN ('" + JOURNAL_PERMISSIONS.join("','") + "') AND rp.permlevel >= 2 " +
-          'WHERE er.entity = ? AND (er.role = ' + ADMINISTRATOR_ROLE + ' OR rp.permkey IS NOT NULL)',
-        [Number(user.id)]
+          ROLE_WHERE + 'AND (er.role = ' + ADMINISTRATOR_ROLE + ' OR rp.permkey IS NOT NULL)',
+        roleArgs(user)
       );
       return found.length > 0 && Number(found[0].n) > 0;
     } catch (e) {
@@ -1077,7 +1083,11 @@ define(['N/query', 'N/runtime', 'N/search', 'N/record', 'N/file', 'N/config'], (
   const handle = (body) => {
     try {
       const request = body || {};
-      const user = runtime.getCurrentUser();
+      const current = runtime.getCurrentUser();
+      // callerRole: the role the caller signed in with, from the RESTlet (which runs as that role). A call that
+      // does not bring it (straight to this Suitelet) is checked with the session's own role.
+      const user = { id: current.id, name: current.name, roleId: current.roleId,
+        role: Number(request.callerRole) > 0 ? Number(request.callerRole) : Number(current.role) };
       if (request.action === 'ping') {
         return {
           ok: true,

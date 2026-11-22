@@ -579,7 +579,10 @@
         l.appendChild(document.createTextNode(' ' + x.label));
         extra.appendChild(l);
       });
-    }).catch(function () {});
+    }).catch(function (e) {
+      var m = $('wMessage');
+      if (m) { m.textContent = 'The dropdown fields could not be loaded: ' + e.message; m.className = 'status-line bad'; }
+    });
   }
 
   function stepSheets(body) {

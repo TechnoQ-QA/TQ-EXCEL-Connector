@@ -45,7 +45,20 @@
     b.addEventListener('click', function () { section(b.getAttribute('data-section')); });
   });
 
+  /* What went wrong in the background (licence sharing, fiscal year, seat or update checks): one line each. */
+  function showProblems(list) {
+    var el = $('problemsBox');
+    el.textContent = '';
+    el.hidden = !(list && list.length);
+    (list || []).forEach(function (p) {
+      var line = document.createElement('div');
+      line.textContent = p.text + ' (' + p.at + ')';
+      el.appendChild(line);
+    });
+  }
+
   function stats(data) {
+    if ('problems' in data) showProblems(data.problems);
     var on = data.mode === 'netsuite';
     var s = data.signIn || {};
     $('statDot').className = 'dot ' + (on ? 'ok' : '');

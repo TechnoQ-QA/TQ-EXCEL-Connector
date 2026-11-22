@@ -576,6 +576,13 @@ CHECK_LABEL = "Check: accounts not in this report (should be 0)"
 PL_TYPES_SPEC = "type:Income,OthIncome,COGS,Expense,OthExpense"
 
 
+def shown(expr):
+    """A worked-out cell: a division by zero or a blank in the sum shows as blank, but a figure NetSuite could not
+    give (#N/A from TQ.BALANCE: a timeout, no seat, the connector not running) stays #N/A, so a total, a variance
+    or the check line never looks complete when it is not."""
+    return 'IFERROR(%s,IF(ISNA(%s),NA(),""))' % (expr, expr)
+
+
 def check_spec(ledger, design):
     """(every account of the report's kind, the accounts its lines take) as account lists for TQ.BALANCE, or None.
 
@@ -985,11 +992,11 @@ def build_report(ledger, design, page=None):
             if column["type"] == "formula":
                 if column["format"] == "percent" and line["format"] == "percent":
                     return ""  # no "change %" of a percentage
-                return '=IFERROR(%s,"")' % across(j, at, line.get("base_row"))
+                return '=' + shown(across(j, at, line.get("base_row")))
             if line["kind"] == "formula":
-                return '=IFERROR(%s,"")' % down(line, j)
+                return '=' + shown(down(line, j))
             if column["type"] == "total":
-                return '=IFERROR(%s,"")' % across(j, at, line.get("base_row"))
+                return '=' + shown(across(j, at, line.get("base_row")))
             if line["kind"] == "accounts":
                 return "=%s%s" % ("-" if line["sign"] < 0 else "", balance("$A%d" % at, j, line.get("filter", "")))
             added = [l["row"] for l in line["adds"]]
@@ -1033,7 +1040,7 @@ def build_report(ledger, design, page=None):
                     if column["type"] == "period":
                         cells.append("=%s%s" % ("-" if line["sign"] < 0 else "", balance("$A%d" % row, j, line.get("filter", ""))))
                     else:
-                        cells.append('=IFERROR(%s,"")' % across(j, row, line.get("base_row")))
+                        cells.append('=' + shown(across(j, row, line.get("base_row"))))
                 add([number, name] + cells, color=GREY)
                 extra.append({"r0": row - 1, "c0": 1, "r1": row - 1, "c1": 1, "indent": 3})
             if line.get("detail"):
@@ -1054,9 +1061,9 @@ def build_report(ledger, design, page=None):
             cells = []
             for j, c in enumerate(columns):
                 if c["type"] == "period" and c["from"]:
-                    cells.append('=IFERROR(%s-%s,"")' % (balance(every, j), balance(covered, j)))
+                    cells.append("=" + shown("%s-%s" % (balance(every, j), balance(covered, j))))
                 elif c["type"] == "total":
-                    cells.append('=IFERROR(%s,"")' % across(j, check_row))
+                    cells.append('=' + shown(across(j, check_row)))
                 else:
                     cells.append("")
             add(["", CHECK_LABEL] + cells, italic=True, color=GREY, top="thin")

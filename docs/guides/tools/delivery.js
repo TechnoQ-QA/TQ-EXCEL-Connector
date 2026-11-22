@@ -10,7 +10,7 @@ const PROJECT = 'C:\\Users\\<you>\\Desktop\\Development\\netsuite-excel-connecto
 const body = [
   ...c.cover('Techno Q Delivery Guide', 'Licences, the delivery pack, test installations, renewals and releases',
     ['Version 1.5  ·  November 2026', 'Internal: Techno Q only. Do not send to clients.',
-      'NetSuite bundle ' + BUNDLE + '  ·  Connector 1.5.3']),
+      'NetSuite bundle ' + BUNDLE + '  ·  Connector 1.5.4']),
   ...c.toc(),
 
   // ------------------------------------------------------------------ 1
@@ -47,7 +47,7 @@ const body = [
   ], [3300, 3100, 3238], { header: true }),
   H2('2.1 Check the setup file before sending'),
   steps([
-    'Right-click `TQConnectorSetup.exe` > **Properties** > **Details**: **Product version** must be the version you mean to deliver (now **1.5.3**).',
+    'Right-click `TQConnectorSetup.exe` > **Properties** > **Details**: **Product version** must be the version you mean to deliver (now **1.5.4**).',
     'Its fingerprint, for the client’s IT if they ask: in PowerShell `Get-FileHash .\\TQConnectorSetup.exe` (the build prints the same SHA-256).',
     'If the build folder is older than the last change, rebuild first: `powershell -ExecutionPolicy Bypass -File installer\\build.ps1` in the project folder (about 2 minutes).',
   ]),

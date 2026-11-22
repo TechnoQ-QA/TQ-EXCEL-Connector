@@ -29,6 +29,7 @@ import tqcrypto
 
 FIELDS = ("version", "url", "sha256", "notes")
 SEAT_RECHECK = 6 * 3600       # seconds between seat checks while allowed
+SEAT_GRACE = 24 * 3600        # seat checks failing this long: the PC is refused until one succeeds
 SEAT_RETRY = 300              # ... and while refused
 MAX_MANIFEST = 64 * 1024
 MAX_SETUP = 300 * 1024 * 1024
@@ -63,6 +64,7 @@ class Seats:
         self.backend, self.pc, self.users, self.by_user = backend, pc, int(users or 1), by_user
         self.checked, self.state = 0.0, {"counted": False, "allowed": True, "message": "Not checked yet."}
         self.lock = threading.Lock()
+        self.failing_since = None   # when seat checks started failing (NetSuite errors), else None
 
     def _check(self):
         answer = self.backend({"action": "seat", "machine": self.pc["id"], "label": self.pc.get("label", ""),
@@ -72,7 +74,15 @@ class Seats:
             if "unknown action" in error.lower():   # NetSuite scripts older than version 4: nothing to count with
                 return {"counted": False, "allowed": True, "message": "Seats are not counted (NetSuite scripts "
                                                                       "before version 4)."}
-            return dict(self.state, message="Seat check failed: %s" % error)   # keep the last answer
+            # keep the last answer for a while (a NetSuite hiccup must not stop work), but not for ever: after
+            # SEAT_GRACE of failing checks this PC is refused until a check succeeds again
+            self.failing_since = self.failing_since or time.time()
+            if time.time() - self.failing_since > SEAT_GRACE:
+                return {"counted": False, "allowed": False, "failed": True,
+                        "message": "The licence's seats could not be checked for %d hours (%s). Check the "
+                                   "connection to NetSuite, then try again." % (SEAT_GRACE // 3600, error)}
+            return dict(self.state, failed=True, message="Seat check failed: %s" % error)
+        self.failing_since = None
         used, users = answer.get("used"), answer.get("users")
         if "allowed" not in answer:   # an answer that does not know about seats
             return {"counted": False, "allowed": True, "message": "Seats are not counted."}
@@ -89,10 +99,14 @@ class Seats:
         # the connection test and the seat list itself pass, so a full licence can still be seen and a seat freed
         if payload.get("action") not in ("ping", "seat", "seatList", "seatRelease"):
             with self.lock:
-                wait = SEAT_RECHECK if self.state.get("allowed") else SEAT_RETRY
+                wait = SEAT_RECHECK if self.state.get("allowed") and not self.state.get("failed") else SEAT_RETRY
                 if time.time() - self.checked > wait:
                     self.checked = time.time()
-                    self.state = self._check()
+                    try:
+                        self.state = self._check()
+                    except Exception as err:   # noqa: BLE001 - counted as a failed check, retried soon
+                        self.failing_since = self.failing_since or time.time()
+                        self.state = dict(self.state, failed=True, message="Seat check failed: %s" % err)
             if not self.state.get("allowed"):
                 return {"ok": False, "error": "Licence: " + self.state["message"]}
         return self.backend(payload)
@@ -180,8 +194,9 @@ class Watcher:
             found = check(url, self.current)
             found.pop("manifest", None)
             self.state = dict(found, checked=time.strftime("%Y-%m-%d %H:%M"))
-        except ValueError as err:
+        except Exception as err:   # noqa: BLE001 - a bad answer must not end the weekly check for good
             self.state = {"available": False, "error": str(err), "checked": time.strftime("%Y-%m-%d %H:%M")}
+            print("Update check failed: %s" % err)
         return self.state
 
     def run(self):

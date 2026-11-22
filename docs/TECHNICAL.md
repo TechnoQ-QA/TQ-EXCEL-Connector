@@ -6,14 +6,14 @@ guide.
 
 | Part | Version (Nov 2026) |
 |---|---|
-| Connector (TQConnector.exe, `server/server.py` `VERSION`) | 1.5.3 |
-| Excel add-in (`addin/manifest.xml` `<Version>`) | 1.5.3.0 |
-| NetSuite script (`netsuite/tq_excel_core.js` `VERSION`) | 8 |
+| Connector (TQConnector.exe, `server/server.py` `VERSION`) | 1.5.4 |
+| Excel add-in (`addin/manifest.xml` `<Version>`) | 1.5.4.0 |
+| NetSuite script (`netsuite/tq_excel_core.js` `VERSION`) | 9 |
 | NetSuite package (SuiteCloud SDF project, `netsuite/sdf`) | deployed to Techno Q 12253116 and the sandbox 65987_SB1 |
 | NetSuite bundle (what customers install) | **715956** "TQ Excel Connector", in Techno Q's account 12253116 |
 | Sign-in integration (shared by every customer) | "TQ Excel Connector" in 12253116, Client ID `028fcb4f...b34f` (`DEFAULT_CLIENT_ID`) |
 | Source | private GitHub repository `TechnoQ-QA/TQ-EXCEL-Connector`, branch `main` |
-| Tests | 98 (`python -m unittest discover -s tests`) |
+| Tests | 103 (`python -m unittest discover -s tests`) |
 
 ---
 
@@ -146,7 +146,7 @@ works for accounts not moved yet. NetSuite retires TBA by 2027.
 | `netsuite/sdf/` | The SuiteCloud package: copies of the scripts plus object XML (script records, deployments, role) |
 | `installer/` | Inno Setup script, build script, signing script, Techno Q's public certificate, legacy PowerShell installer |
 | `scripts/` | Techno Q tools: licences, update signing, NetSuite package, icons, connection check, developer setup |
-| `tests/` | `test_server.py`: 98 tests (server, reports, layouts, templates, sign-in, seats, updates, package, care) |
+| `tests/` | `test_server.py`: 103 tests (server, reports, layouts, templates, sign-in, seats, updates, package, care) |
 | `docs/` | This document, the client IT install note, the panel mockup |
 | `build/` | Build output (not in Git): venv, PyInstaller output, staged app, setup file, checksum, certificate |
 
@@ -214,9 +214,15 @@ Currency, journals, seats; 5 branding; 6 seats per NetSuite user, seat list and 
 
 ### 4.4 Who may do what
 
+**Since script 9 every check looks at the role the caller signed in with**, not at any role they hold. The RESTlet
+(running as the caller) sends `callerRole` = `runtime.getCurrentUser().role` to the elevated Suitelet; the queries
+require `er.role = callerRole` for that employee, so a forged value can only name a role the user really holds. A
+permission set to None (`permlevel` 0) does not count for reports. Release/library/licence administration needs
+Administrator as the signed-in role.
+
 | Check | Rule (in `tq_excel_core.js`) |
 |---|---|
-| Any balance or list (`assertReportAccess`) | The caller has the Administrator role, or a role with REPO_FINANCIALS, REPO_TRIALBALANCE or REPO_GL. Otherwise: "None of your NetSuite roles may run financial reports". |
+| Any balance or list (`assertReportAccess`) | The caller has the Administrator role, or a role with REPO_FINANCIALS, REPO_TRIALBALANCE or REPO_GL. Otherwise: "The NetSuite role you signed in with may not run financial reports". |
 | Budget upload | Administrator, or ADMI_BUDGET / LIST_BUDGET / TRAN_BUDGET / ADMI_SETUPBUDGET at Edit or higher |
 | Journal upload | Administrator, or TRAN_JOURNAL at Edit or higher |
 | Release someone else's seat; replace or remove someone else's library layout | Administrator |
@@ -628,6 +634,8 @@ python scripts\make_licence.py --customer "Customer name" --account 1234567 --us
   `ping`, `seat`, `seatList` and `seatRelease` work without a seat; everything else is refused when the licence's
   users are all taken.
 - A seat unused for 30 days frees itself. Setup page > Seats lists them; an administrator can release any.
+- A failing seat check (a NetSuite error) keeps the last answer and is retried every 5 minutes; after 24 hours of
+  failures (`SEAT_GRACE`) the PC is refused until a check succeeds, so seats are never left uncounted (1.5.4).
 
 ### 6.10 Keeping it healthy and moving it (`care.py`, 1.4)
 
@@ -747,7 +755,7 @@ trust, add-in registration) to run the connector from source.
 ```
 python server/server.py --http --mock --port 3010     # browser preview with sample data
 python server/server.py                               # HTTPS on 3000 with server/config.json (needs setup-excel.ps1 once)
-python -m unittest discover -s tests                  # 98 tests
+python -m unittest discover -s tests                  # 103 tests
 python scripts/check_netsuite.py --period "Oct 2026"  # connection check; prints balances, never credentials
 python scripts/make_icons.py                          # regenerate icons
 ```
@@ -774,6 +782,16 @@ python scripts/make_icons.py                          # regenerate icons
 | Localhost certificate key | `data\certs\localhost.key` | Never |
 | AI key (optional) | `config.json` | Only to the AI provider, when the customer turned the add-on on |
 | Diagnostics, setup export | Documents\TQ Connector | Only when the user sends the file; secrets removed |
+
+Local server hardening (1.5.4): requests whose `Host` is not localhost/127.0.0.1/[::1] (DNS rebinding) and POSTs
+with another site's `Origin` are refused (403); folders are never listed; the request log drops query strings (an
+OAuth callback's one-time code never reaches `server.log` or the diagnostics zip); the account ID may only hold
+letters, digits, `_` and `-` (the sign-in and RESTlet addresses are built from it).
+
+Errors are not hidden (1.5.4): layout cells that are worked out (totals, variances, %, the check line) use
+`IFERROR(x,IF(ISNA(x),NA(),""))` (`layouts.shown`): a division by zero or a blank shows blank, but a figure
+NetSuite could not give stays #N/A. Dashboard data blocks give #N/A instead of 0. Background problems (licence
+sharing, fiscal year detection, update check) are logged once and listed on Setup > Overview (`care.problem`).
 
 ---
 

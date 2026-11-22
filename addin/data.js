@@ -283,7 +283,7 @@
       select.textContent = '';
       catalog.forEach(function (c) { option(select, c.table, c.label); });
       showTable();
-    }).catch(function () {});
+    }).catch(function (e) { TQPanel.say('The ready-made queries could not be loaded: ' + e.message, true); });
   }
 
   /* Called when the tab is shown: reads the workbook's queries. */

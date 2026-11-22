@@ -46,7 +46,7 @@ import ledger as ledger_module  # noqa: E402
 import licence as licence_module  # noqa: E402
 import tqcrypto  # noqa: E402
 
-VERSION = "1.5.3"
+VERSION = "1.5.4"
 FROZEN = bool(getattr(sys, "frozen", False))   # running as the installed TQConnector.exe
 if FROZEN:
     ROOT = os.path.dirname(os.path.abspath(sys.executable))
@@ -127,10 +127,20 @@ def restlet_url(account):
     return "https://%s%s%s" % (str(account).strip().lower().replace("_", "-"), RESTLET_HOST_SUFFIX, RESTLET_PATH)
 
 
+ACCOUNT_RE = re.compile(r"[A-Za-z0-9_-]{1,40}")
+LOCAL_HOSTS = ("localhost", "127.0.0.1", "[::1]", "::1")
+
+
 def check_config(cfg):
     """Raises ValueError for a config that cannot work; returns it tidied."""
     if not isinstance(cfg, dict):
         raise ValueError("config.json must hold one JSON object")
+    account = str(cfg.get("accountId", "")).strip()
+    if account and not ACCOUNT_RE.fullmatch(account):
+        # the sign-in and RESTlet addresses are made from it: nothing else may get in (a tampered setup file could
+        # otherwise send the sign-in to another site)
+        raise ValueError("The NetSuite account ID can only have letters, digits, _ and -, such as 1234567 or "
+                         "1234567_SB1 (Setup > Company > Company Information > Account ID).")
     # Either "Sign in with NetSuite" (OAuth 2.0: Techno Q's client ID unless another is given) or token-based
     # authentication (four keys). With only an account ID, it is Sign in with NetSuite.
     tba = all(str(cfg.get(k, "")).strip() for k in SECRET_KEYS) and not str(cfg.get("clientId", "")).strip()
@@ -618,8 +628,31 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _local(self):
+        """Only requests addressed to this PC: a web page that points a name of its own at 127.0.0.1 (DNS rebinding)
+        sends its own name as Host, and is refused. A POST that names another site as Origin is refused too."""
+        host = self.headers.get("Host", "")
+        name = host.rsplit(":", 1)[0] if not host.startswith("[") else host.split("]")[0] + "]"
+        if host and name.lower() not in LOCAL_HOSTS:
+            return False
+        origin = self.headers.get("Origin", "")
+        return not origin or origin == "null" or (urllib.parse.urlsplit(origin).hostname or "").lower() in LOCAL_HOSTS
+
+    def log_message(self, fmt, *args):
+        # the request line without its query: an OAuth callback carries a one-time code that must not reach the log
+        # (or the diagnostics zip that includes the log)
+        args = tuple(re.sub(r"\?\S*", "", a, count=1) if isinstance(a, str) and a.split(" ")[0] in
+                     ("GET", "POST", "HEAD") else a for a in args)
+        super().log_message(fmt, *args)
+
+    def list_directory(self, path):   # never list the add-in's folders
+        self.send_error(404, "Not found")
+        return None
+
     def do_GET(self):
         path = urllib.parse.urlsplit(self.path).path
+        if not self._local():
+            return self._json(403, {"ok": False, "error": "Only requests to localhost are accepted"})
         if path == "/api/status":
             fetch_licence(type(self))
             return self._json(200, {"ok": True, "mode": self.mode, "chat": type(self).chat.available(),
@@ -652,6 +685,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = urllib.parse.urlsplit(self.path).path
+        if not self._local():
+            self.close_connection = True
+            return self._json(403, {"ok": False, "error": "Only requests to localhost are accepted"})
         if path not in ("/api", "/api/chat", "/api/design", "/api/query", "/api/setup", "/api/budget", "/api/journal", "/api/update",
                         "/api/signout", "/api/logo", "/api/prefs", "/api/diagnostics", "/api/export", "/api/import"):
             return self._json(404, {"ok": False, "error": "Not found"})
@@ -781,8 +817,16 @@ def _detect_fiscal_start(netsuite, ledger):
     """No fiscal year start in the settings: take it from NetSuite's fiscal year periods (TQ script 8)."""
     try:
         month = int((netsuite({"action": "setup"}) or {}).get("fiscalStartMonth") or 0)
-    except (TypeError, ValueError, OSError, KeyError):
+    except Exception as err:   # noqa: BLE001 - a thread of its own: say what happened instead of dying quietly
+        care.problem("fiscal", "The first month of the fiscal year could not be read from NetSuite (%s), so %s is "
+                               "used. Set it on Setup > NetSuite connection if that is wrong."
+                     % (err, MONTHS[ledger.fiscal_start_month - 1]))
         return
+    if not 1 <= month <= 12:
+        care.problem("fiscal", "NetSuite did not say when the fiscal year starts, so %s is used. Set it on Setup > "
+                               "NetSuite connection if that is wrong." % MONTHS[ledger.fiscal_start_month - 1])
+        return
+    care.problem("fiscal", "")
     if 1 <= month <= 12 and month != ledger.fiscal_start_month:
         ledger.fiscal_start_month = month
         with ledger._lock:
@@ -813,15 +857,23 @@ def fetch_licence(handler, force=False):
     if not signed_in:
         return False
     try:
-        answer = handler.netsuite({"action": "licenceGet"})
-        text = str((answer or {}).get("licence") or "").strip() if answer.get("ok") else ""
+        answer = handler.netsuite({"action": "licenceGet"}) or {}
+        if not answer.get("ok"):
+            care.problem("licence", "The licence could not be read from NetSuite: %s" % (answer.get("error") or "no answer"))
+            return False
+        text = str(answer.get("licence") or "").strip()
         if not text:
+            care.problem("licence", "")   # none stored yet: the administrator's first sign-in stores it
             return False
         found = licence_module.parse(text)
-        if not licence_module.check(found, handler.config["accountId"], handler.today)["ok"]:
+        verdict = licence_module.check(found, handler.config["accountId"], handler.today)
+        if not verdict["ok"]:
+            care.problem("licence", "The licence stored in NetSuite does not fit: %s" % verdict["message"])
             return False
-    except (ValueError, KeyError, TypeError, OSError):
+    except (ValueError, KeyError, TypeError, OSError, AttributeError) as err:
+        care.problem("licence", "The licence stored in NetSuite could not be used: %s" % err)
         return False
+    care.problem("licence", "")
     os.makedirs(os.path.dirname(handler.licence_path), exist_ok=True)
     with open(handler.licence_path, "w", encoding="utf-8") as f:
         json.dump(found, f, indent=1)
@@ -844,7 +896,9 @@ def sync_licence(handler):
     try:
         answer = handler.netsuite({"action": "licenceGet"}) or {}
         if not answer.get("ok"):
+            care.problem("licence", "The licence in NetSuite could not be compared: %s" % (answer.get("error") or "no answer"))
             return False
+        care.problem("licence", "")
         text = str(answer.get("licence") or "").strip()
         if not text:
             if share_licence(handler):
@@ -854,9 +908,12 @@ def sync_licence(handler):
         mine = licence_module.read(handler.licence_path)
         if _licence_order(found) <= _licence_order(mine):
             return False
-        if not licence_module.check(found, handler.config["accountId"], handler.today)["ok"]:
+        verdict = licence_module.check(found, handler.config["accountId"], handler.today)
+        if not verdict["ok"]:
+            care.problem("licence", "A newer licence in NetSuite does not fit this account: %s" % verdict["message"])
             return False
-    except (ValueError, KeyError, TypeError, OSError, AttributeError):
+    except (ValueError, KeyError, TypeError, OSError, AttributeError) as err:
+        care.problem("licence", "The licence in NetSuite could not be used: %s" % err)
         return False
     with open(handler.licence_path, "w", encoding="utf-8") as f:
         json.dump(found, f, indent=1)
@@ -942,6 +999,7 @@ def setup_view(handler):
             "hasSecrets": all(str(cfg.get(k) or "").strip() for k in SECRET_KEYS),
             "aiOn": bool(str(ai.get("apiKey") or "").strip()), "licence": handler.licence,
             "dataFolder": os.path.dirname(handler.config_path),
+            "problems": care.problems(),
             "certExpires": str(care.cert_expires(CERT_PATH) or "") if os.path.exists(CERT_PATH) else "",
             "certDaysLeft": care.cert_days_left(CERT_PATH) if os.path.exists(CERT_PATH) else None}
 

@@ -55,8 +55,8 @@ def build(s, kind, periods):
 
 def _profit_and_loss(s, key, series, bal, M, LY, FYS, LYS, pct, points):
     def four(acc):
-        return ["=IFERROR(%s,0)" % bal(acc, M, M), "=IFERROR(%s,0)" % bal(acc, LY, LY),
-                "=IFERROR(%s,0)" % bal(acc, FYS, M), "=IFERROR(%s,0)" % bal(acc, LYS, LY)]
+        return ["=IFERROR(%s,NA())" % bal(acc, M, M), "=IFERROR(%s,NA())" % bal(acc, LY, LY),
+                "=IFERROR(%s,NA())" % bal(acc, FYS, M), "=IFERROR(%s,NA())" % bal(acc, LYS, LY)]
     k = key("Profit and loss", ["Month", "Month LY", "Year to date", "YTD LY"], [
         ["Revenue"] + four('"type:Income"'), ["Cost of sales"] + four('"type:COGS"'),
         ["Operating expenses"] + four('"type:Expense"'), ["Other income"] + four('"type:OthIncome"'),
@@ -110,19 +110,19 @@ CURRENT_LIABILITIES = '"type:AcctPay,CredCard,OthCurrLiab,DeferRevenue"'
 
 def _position(s, key, series, bal, M, LY, FYS, LYS, ratio, days, plus):
     def two(acc):
-        return ["=IFERROR(%s,0)" % bal(acc, M, M), "=IFERROR(%s,0)" % bal(acc, LY, LY)]
+        return ["=IFERROR(%s,NA())" % bal(acc, M, M), "=IFERROR(%s,NA())" % bal(acc, LY, LY)]
     k = key("Financial position", ["Month end", "A year earlier"], [
         ["Bank and cash"] + two('"type:Bank"'), ["Receivables"] + two('"type:AcctRec,UnbilledRec"'),
         ["Other current assets"] + two('"type:OthCurrAsset,DeferExpense"'), ["Fixed assets"] + two('"type:FixedAsset"'),
         ["Other assets"] + two('"type:OthAsset"'), ["Payables"] + two('"type:AcctPay"'),
         ["Other current liabilities"] + two('"type:CredCard,OthCurrLiab,DeferRevenue"'),
         ["Long-term liabilities"] + two('"type:LongTermLiab"'),
-        ["Sales, year to date", "=IFERROR(%s,0)" % bal('"type:Income"', FYS, M),
-         "=IFERROR(%s,0)" % bal('"type:Income"', LYS, LY)],
-        ["Cost of sales, year to date", "=IFERROR(%s,0)" % bal('"type:COGS"', FYS, M),
-         "=IFERROR(%s,0)" % bal('"type:COGS"', LYS, LY)],
-        ["Days, year to date", "=IFERROR(%s,0)" % bal('"calc:Days"', FYS, M),
-         "=IFERROR(%s,0)" % bal('"calc:Days"', LYS, LY)]])
+        ["Sales, year to date", "=IFERROR(%s,NA())" % bal('"type:Income"', FYS, M),
+         "=IFERROR(%s,NA())" % bal('"type:Income"', LYS, LY)],
+        ["Cost of sales, year to date", "=IFERROR(%s,NA())" % bal('"type:COGS"', FYS, M),
+         "=IFERROR(%s,NA())" % bal('"type:COGS"', LYS, LY)],
+        ["Days, year to date", "=IFERROR(%s,NA())" % bal('"calc:Days"', FYS, M),
+         "=IFERROR(%s,NA())" % bal('"calc:Days"', LYS, LY)]])
 
     def ca(c):
         return "(%s+%s+%s)" % (k("Bank and cash", c), k("Receivables", c), k("Other current assets", c))
@@ -185,8 +185,8 @@ def _position(s, key, series, bal, M, LY, FYS, LYS, ratio, days, plus):
 
 def _budget(s, key, series, bal, M, FYS):
     def four(acc):
-        return ["=IFERROR(%s,0)" % bal('"%s"' % acc, M, M), "=IFERROR(%s,0)" % bal('"budget:%s"' % acc, M, M),
-                "=IFERROR(%s,0)" % bal('"%s"' % acc, FYS, M), "=IFERROR(%s,0)" % bal('"budget:%s"' % acc, FYS, M)]
+        return ["=IFERROR(%s,NA())" % bal('"%s"' % acc, M, M), "=IFERROR(%s,NA())" % bal('"budget:%s"' % acc, M, M),
+                "=IFERROR(%s,NA())" % bal('"%s"' % acc, FYS, M), "=IFERROR(%s,NA())" % bal('"budget:%s"' % acc, FYS, M)]
     k = key("Actual and budget", ["Month", "Month budget", "Year to date", "YTD budget"], [
         ["Revenue"] + four("type:Income"), ["Cost of sales"] + four("type:COGS"),
         ["Operating expenses"] + four("type:Expense"), ["Net income"] + four("calc:NetIncome")])

@@ -89,7 +89,8 @@
         if (!data.segments.length) { label.hidden = true; select.hidden = true; }
       }).catch(function () { label.hidden = true; select.hidden = true; });
     });
-    TQ.callApi({ action: 'accounts' }).then(function (data) { accounts = data.accounts; }).catch(function () {});
+    TQ.callApi({ action: 'accounts' }).then(function (data) { accounts = data.accounts; })
+      .catch(function (e) { TQPanel.say('The accounts could not be loaded from NetSuite: ' + e.message, true); });
     preview();
   }
 

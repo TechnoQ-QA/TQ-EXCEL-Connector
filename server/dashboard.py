@@ -171,8 +171,8 @@ def build(ledger, kind, month="", filters=None, title="", taken=()):
 
     def four(account):
         """[month, month last year, year to date, last year to date] for an account or total."""
-        return ["=IFERROR(%s,0)" % _bal(account, M, M), "=IFERROR(%s,0)" % _bal(account, LY, LY),
-                "=IFERROR(%s,0)" % _bal(account, FYS, M), "=IFERROR(%s,0)" % _bal(account, LYS, LY)]
+        return ["=IFERROR(%s,NA())" % _bal(account, M, M), "=IFERROR(%s,NA())" % _bal(account, LY, LY),
+                "=IFERROR(%s,NA())" % _bal(account, FYS, M), "=IFERROR(%s,NA())" % _bal(account, LYS, LY)]
 
     head = ["", "Month", "Month LY", "Year to date", "YTD LY"]
     if kind == "cash":
@@ -270,7 +270,7 @@ def build(ledger, kind, month="", filters=None, title="", taken=()):
         if top:
             names = {a["number"]: a["name"].split(" : ")[-1] for a in banks}
             f, l = s.block("Bank accounts at month end", ["Account", "Balance"],
-                           [[names[t], "=IFERROR(%s,0)" % _bal(_q(t), M, M)] for t in top])
+                           [[names[t], "=IFERROR(%s,NA())" % _bal(_q(t), M, M)] for t in top])
             s.chart("BarClustered", "Bank accounts at month end", f, l, DATA, DATA + 1, slot)
             slot += 1
 
@@ -282,7 +282,7 @@ def build(ledger, kind, month="", filters=None, title="", taken=()):
             for v in values:
                 parts = dict(arg, **{split: _q(v)})
                 seg = ",".join(parts[k] for k in SEGMENT_KINDS) + ",$B$3"
-                rows.append([v.split(" : ")[-1], "=IFERROR(%s,0)" % _bal('"type:Income"', FYS, M, seg)])
+                rows.append([v.split(" : ")[-1], "=IFERROR(%s,NA())" % _bal('"type:Income"', FYS, M, seg)])
             f, l = s.block("Sales by %s, year to date" % split, [KIND_LABEL[split], "Sales"], rows)
             s.text.append([f + 1, DATA, l, DATA])
             s.chart("BarClustered", "Sales by %s, year to date" % split, f, l, DATA, DATA + 1, slot)
@@ -293,8 +293,8 @@ def build(ledger, kind, month="", filters=None, title="", taken=()):
                    [a["number"] for a in costs])
         if top:
             names = {a["number"]: a["name"].split(" : ")[-1] for a in costs}
-            rows = [[names[t], "=IFERROR(%s,0)" % _bal(_q(t), FYS, M)] for t in top]
-            rows.append(["Other costs", "=IFERROR(%s-%s,0)" % (_bal('"type:Expense,COGS"', FYS, M),
+            rows = [[names[t], "=IFERROR(%s,NA())" % _bal(_q(t), FYS, M)] for t in top]
+            rows.append(["Other costs", "=IFERROR(%s-%s,NA())" % (_bal('"type:Expense,COGS"', FYS, M),
                                                               _bal('"%s"' % ", ".join(top), FYS, M))])
             f, l = s.block("Costs, year to date", ["Cost", "Amount"], rows)
             s.text.append([f + 1, DATA, l, DATA])

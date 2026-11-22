@@ -421,7 +421,7 @@ const body = [
     ['A figure differs from NetSuite', 'Check you compare the same month, subsidiary and filters. Drill down to see what is in it.'],
     ['Excel says the add-in cannot load', 'Start menu > TQ Connector, wait a few seconds, reopen the panel. It then keeps itself running.'],
     ['"Not signed in"', 'Click Sign in with NetSuite. Sign-in lasts up to 30 days of use.'],
-    ['"None of your NetSuite roles may run financial reports"', 'Ask your administrator for the TQ Excel User role and sign in with it.'],
+    ['"The NetSuite role you signed in with may not run financial reports"', 'Ask your administrator for the TQ Excel User role and sign in with it.'],
     ['All seats are taken', 'Ask your administrator to release an unused seat.'],
     ['Can I send the workbook to someone without the add-in?', 'Use Send > Copy as values (section 11); they see the figures but cannot refresh.'],
     ['Does the workbook keep my reports?', 'Yes: reports, layouts and data tables are saved in the workbook. Open it on any PC with TQ Connector and refresh.'],

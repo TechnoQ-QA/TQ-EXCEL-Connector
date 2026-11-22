@@ -314,6 +314,31 @@ class HttpTest(unittest.TestCase):
         ok = self.post({"action": "ping"})
         self.assertTrue(ok["ok"])
 
+    def test_only_localhost_and_no_folder_listing(self):
+        """A page that points its own name at 127.0.0.1 (DNS rebinding) sends that name as Host: refused. So is a POST
+        whose Origin is another site. Folders are never listed."""
+        def code(path, headers, data=None):
+            request = urllib.request.Request(self.base + path, data=data, headers=headers,
+                                             method="POST" if data is not None else "GET")
+            try:
+                with urllib.request.urlopen(request, timeout=10) as response:
+                    return response.status
+            except urllib.error.HTTPError as err:
+                return err.code
+        self.assertEqual(code("/api/status", {"Host": "evil.example:3000"}), 403)
+        self.assertEqual(code("/api/status", {"Host": "localhost:3000"}), 200)
+        json_post = {"Content-Type": "application/json"}
+        self.assertEqual(code("/api", dict(json_post, Origin="https://evil.example"), b'{"action":"ping"}'), 403)
+        self.assertEqual(code("/api", dict(json_post, Origin="https://localhost:3000"), b'{"action":"ping"}'), 200)
+        self.assertEqual(code("/assets/", {}), 404)
+
+    def test_account_id_is_only_letters_digits(self):
+        """The sign-in and RESTlet addresses are made from the account ID: a tampered one is refused."""
+        for bad in ("evil.example/#", "1234567.evil.com", "123 456", "a/b"):
+            with self.assertRaises(ValueError):
+                server.check_config({"accountId": bad})
+        self.assertEqual(server.check_config({"accountId": "1234567-sb1"})["accountId"], "1234567_SB1")
+
     def test_rejects_non_json_posts(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:
             self.post({"action": "ping"}, content_type="text/plain")
@@ -435,6 +460,12 @@ class Workbook:
             return self.ledger.shift_period(base, period.group(2) or "")
         if re.fullmatch(r'"[^"]*"', formula):   # ="Jan 2026"
             return formula.strip('"')
+        kept = re.fullmatch(r'IFERROR\((.*),IF\(ISNA\((.*)\),NA\(\),""\)\)', formula)   # layouts.shown()
+        if kept and kept.group(1) == kept.group(2):
+            try:
+                return self.evaluate("=" + kept.group(1))
+            except ZeroDivisionError:
+                return ""
         wrapped = re.fullmatch(r'IFERROR\((.*),""\)', formula)
         if wrapped:
             try:
@@ -648,10 +679,10 @@ class LayoutTest(unittest.TestCase):
             rows = report["rows"]
             at = lambda label: [n for n, r in enumerate(rows) if r[1] == label and r[2]][0] + 1  # noqa: E731  (not a heading)
             rev, pay, total = at("Rooms Revenue"), at("Rooms Payroll and Related"), at("Total Revenue")
-            self.assertEqual(rows[pay - 1][3], '=IFERROR(C%d/C%d,"")' % (pay, rev))        # % of the department's revenue
-            self.assertEqual(rows[total - 1][3], '=IFERROR(C%d/C%d,"")' % (total, total))  # the total is its own base
+            self.assertEqual(rows[pay - 1][3], '=IFERROR(C%d/C%d,IF(ISNA(C%d/C%d),NA(),""))' % (pay, rev, pay, rev))        # % of the department's revenue
+            self.assertEqual(rows[total - 1][3], '=IFERROR(C%d/C%d,IF(ISNA(C%d/C%d),NA(),""))' % (total, total, total, total))  # the total is its own base
             gop = at("Gross Operating Profit")
-            self.assertEqual(rows[gop - 1][3], '=IFERROR(C%d/C%d,"")' % (gop, total))
+            self.assertEqual(rows[gop - 1][3], '=IFERROR(C%d/C%d,IF(ISNA(C%d/C%d),NA(),""))' % (gop, total, gop, total))
             # "excluding": a new expense account still lands in Other Expenses, payroll never twice
             everything = set(ledger.members("type:COGS,Expense"))
             rest = set(ledger.members("type:COGS,Expense excluding 6000"))
@@ -1448,6 +1479,32 @@ class InstallTest(unittest.TestCase):
     def licence(self, **change):
         made = server.licence_module.make(self.key, "World of Hospitality", "1234567_sb1", 5, "2027-12-31", today=TODAY)
         return json.dumps(dict(made, **change))
+
+    def test_seat_checks_that_keep_failing_stop_after_the_grace(self):
+        """A seat check that fails (NetSuite error) keeps the last answer for a while, then refuses: seats are never
+        left uncounted for ever. One good check puts it right."""
+        upd = server.updates_module
+        answer = {"value": {"ok": False, "error": "boom"}}
+        backend = lambda payload: answer["value"] if payload["action"] == "seat" else {"ok": True, "rows": []}  # noqa: E731
+        seats = upd.Seats(backend, {"id": "pc1", "label": "PC1"}, 5)
+        self.assertTrue(seats({"action": "sql"})["ok"])                       # within the grace: work goes on
+        self.assertIn("Seat check failed", seats.state["message"])
+        seats.failing_since -= upd.SEAT_GRACE + 1
+        seats.checked = 0
+        refused = seats({"action": "sql"})
+        self.assertFalse(refused["ok"])
+        self.assertIn("could not be checked", refused["error"])
+        answer["value"] = {"ok": True, "allowed": True, "used": 1, "users": 5}
+        seats.checked = 0
+        self.assertTrue(seats({"action": "sql"})["ok"])
+        self.assertIsNone(seats.failing_since)
+
+    def test_background_problems_are_kept_and_cleared(self):
+        care = server.care
+        care.problem("test", "Something went wrong")
+        self.assertIn("Something went wrong", [p["text"] for p in care.problems()])
+        care.problem("test", "")
+        self.assertNotIn("test", [p["key"] for p in care.problems()])
 
     def test_seats_per_pc(self):
         answers = []

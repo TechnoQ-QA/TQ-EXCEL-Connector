@@ -352,7 +352,10 @@
           });
         });
       });
-    }).catch(function () {});
+    }).catch(function (e) {   // rebuilding without them would lose what people typed: stop instead
+      throw new Error('The comments on the report could not be read, so it was not rebuilt (the comments are safe). ' +
+        'Try again. ' + (e && e.message ? e.message : ''));
+    });
   }
 
   /* Every named sheet is made, in order, before any formula is written: a summary sheet points at the

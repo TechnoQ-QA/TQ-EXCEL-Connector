@@ -41,6 +41,31 @@ def _log(text):
         pass
 
 
+# ------------------------------------------------------------------ problems --
+# Background work (licence sharing, fiscal year detection, the update check, seat checks) runs without anyone
+# watching. What goes wrong there is logged once and kept here, so the setup page can show it.
+
+PROBLEMS = {}
+_problems_lock = threading.Lock()
+
+
+def problem(key, text):
+    """Records (and logs, once per new text) a background problem; text "" clears it."""
+    with _problems_lock:
+        old = PROBLEMS.get(key, {}).get("text")
+        if not text:
+            PROBLEMS.pop(key, None)
+            return
+        PROBLEMS[key] = {"text": text, "at": time.strftime("%Y-%m-%d %H:%M")}
+    if text != old:
+        _log("Problem (%s): %s" % (key, text))
+
+
+def problems():
+    with _problems_lock:
+        return [dict(v, key=k) for k, v in sorted(PROBLEMS.items())]
+
+
 # ------------------------------------------------------------------ keep it running --
 
 def _answering(port):
@@ -77,7 +102,12 @@ def clear_stop(data_dir):
 def watch_stop(data_dir, shutdown, every=0.5):
     """Background thread in the connector: calls shutdown() when the stop file appears."""
     def loop():
-        while not stop_requested(data_dir):
+        while True:
+            try:
+                if stop_requested(data_dir):
+                    break
+            except Exception as err:   # noqa: BLE001 - keep watching: the setup relies on this thread
+                _log("Stop check failed: %s" % err)
             time.sleep(every)
         _log("Stop requested (by the setup): shutting down.")
         shutdown()
@@ -126,7 +156,7 @@ def watch(argv, frozen, script, port=3000, data_dir=None):
         try:
             child = subprocess.Popen(cmd, creationflags=flags)
             code = child.wait()
-        except OSError as err:
+        except Exception as err:   # noqa: BLE001 - the watcher must outlive any one failure
             code = "could not start: %s" % err
         if data_dir and stop_requested(data_dir):
             _log("Connector stopped for the setup; the watcher ends.")

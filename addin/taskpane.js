@@ -205,8 +205,11 @@
       text.textContent = 'Installing ' + update.version + '... the connector restarts in a minute; then close and reopen this panel.';
       fetch('/api/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"op":"install"}' })
         .then(function (r) { return r.json(); })
-        .then(function (data) { if (!data.ok) text.textContent = data.error; })
-        .catch(function () {});
+        .then(function (data) { if (!data.ok) { text.textContent = data.error; b.disabled = false; } })
+        .catch(function (e) {
+          text.textContent = 'The update could not be started: ' + (e && e.message ? e.message : TQ.DOWN) + ' Try again.';
+          b.disabled = false;
+        });
     });
     line.appendChild(b);
     $('banners').appendChild(line);
@@ -220,12 +223,16 @@
       else window.open(url, '_blank');
     } catch (e) { window.open(url, '_blank'); }
     $('status').textContent = 'Finish signing in in your browser…';
-    var tries = 0;
+    var tries = 0, down = 0;
     var timer = setInterval(function () {
       tries += 1;
       fetch('/api/status').then(function (r) { return r.json(); }).then(function (st) {
+        down = 0;
         if ((st.signIn && st.signIn.signedIn) || tries > 100) { clearInterval(timer); showStatus(); }
-      }).catch(function () {});
+      }).catch(function () {
+        down += 1;
+        if (down >= 5) { clearInterval(timer); $('status').textContent = 'Not connected'; say(TQ.DOWN, true); }
+      });
     }, 3000);
   }
 

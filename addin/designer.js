@@ -200,7 +200,8 @@
     other.placeholder = 'e.g. Brand: Premium; Name: Al Noor';
     box.appendChild(otherLabel);
     box.appendChild(other);
-    TQ.callApi({ action: 'accounts' }).then(function (data) { accounts = data.accounts; }).catch(function () {});
+    TQ.callApi({ action: 'accounts' }).then(function (data) { accounts = data.accounts; })
+      .catch(function (e) { TQPanel.say('The accounts could not be loaded from NetSuite: ' + e.message, true); });
   }
 
   function searchAccounts() {
@@ -288,7 +289,7 @@
       templates.forEach(function (t) { option(select, t.id, t.name); });
       option(select, OWN, 'My own format, typed on a sheet');
       showTemplate();
-    }).catch(function () {});
+    }).catch(function (e) { TQPanel.say('The report templates could not be loaded: ' + e.message, true); });
   }
 
   function showTemplate() {
