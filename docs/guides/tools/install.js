@@ -17,6 +17,7 @@ const body = [
   // ------------------------------------------------------------------ 1
   H1('1. Overview'),
   box('key', 'The whole installation', [
+    '**Before you start: get the licence.** Send Techno Q the NetSuite **account ID** of every account you will use (production, and each sandbox), for example `1234567` or `1234567_SB1` (Setup > Company > Company Information > Account ID). Techno Q sends back one licence file per account.',
     '**Administrator, once (about 10 minutes):** install the TQ bundle in NetSuite and give users the TQ Excel User role.',
     '**Each PC (about 3 minutes):** run TQConnectorSetup.exe, type the NetSuite account ID, sign in with NetSuite.',
     'Nothing else: no scripts to deploy, no integration record to create, no keys or addresses to copy.',
@@ -24,6 +25,7 @@ const body = [
   spacer(),
   table([
     ['Step', 'What', 'Who', 'Time'],
+    ['0', 'Send Techno Q the account ID(s); receive the licence file(s)', 'Client’s NetSuite administrator', '1 day'],
     ['1', 'Install bundle ' + BUNDLE + ' and assign the role', 'Client’s NetSuite administrator', '10 min'],
     ['2', 'Run the setup on each PC, type the account ID', 'Each user (or IT)', '3 min per PC'],
     ['3', 'Sign in with NetSuite (the administrator first: this stores the licence)', 'Each user', '1 min'],
@@ -48,7 +50,7 @@ const body = [
     ['`TechnoQ.cer` (optional)', 'Techno Q’s code-signing certificate, if IT wants Windows to show Techno Q as the verified publisher (section 5).'],
     ['This guide and the user guide', ''],
   ], [3300, 6338]),
-  P('Techno Q needs the client’s NetSuite **account ID** (production, and sandbox if used) to make the licence and to make the bundle available to that account.'),
+  box('note', 'One licence per NetSuite account', 'A licence works for one account ID only. A client with production and a sandbox receives two files. Without a licence for the account, the connection test works but no NetSuite data is read: the panel says “No licence”.'),
 
   H2('1.3 Requirements'),
   table([
@@ -132,6 +134,7 @@ const body = [
   H1('4. Acceptance checklist'),
   table([
     ['☐', 'Check', 'Result'],
+    ['☐', 'Licence file received for each NetSuite account used', ''],
     ['☐', 'Bundle ' + BUNDLE + ' shows Installed in NetSuite', ''],
     ['☐', 'Every Excel user has the TQ Excel User role', ''],
     ['☐', 'TQ Connector installed on each PC; TQ Connector tab in Excel', ''],
