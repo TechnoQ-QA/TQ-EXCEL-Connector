@@ -15,6 +15,19 @@ const PAGE_W = 11906;     // A4
 const MARGIN = 1134;      // 2 cm
 const TEXT_W = PAGE_W - 2 * MARGIN;
 const FONT = 'Calibri';
+const PAGE_H = 16838;     // A4, twips (1 twip = 635 EMU)
+const BRAND = path.join(__dirname, 'brand');
+const BANNER_W = 7562855; // EMU, the full page width
+const BANNER_H = 789874;
+
+/** A letterhead picture floating at a fixed place on the page (sizes and offsets in EMU, as in the scope document). */
+function brandImage(file, type, cx, cy, horizontal, top, behind = false) {
+  return new ImageRun({ type, data: fs.readFileSync(path.join(BRAND, file)),
+    transformation: { width: Math.round(cx / 9525), height: Math.round(cy / 9525) },
+    floating: { horizontalPosition: horizontal,
+      verticalPosition: { relative: d.VerticalPositionRelativeFrom.PAGE, offset: Math.round(top) },
+      behindDocument: behind, allowOverlap: true, wrap: { type: d.TextWrappingType.NONE } } });
+}
 
 let listInstance = 0;
 
@@ -174,19 +187,23 @@ function doc(title, children) {
         { level: 0, format: LevelFormat.DECIMAL, text: '%1.', alignment: AlignmentType.LEFT, style: { paragraph: { indent: { left: 540, hanging: 360 } }, run: { bold: true, color: ORANGE } } }] },
     ] },
     sections: [{
-      properties: { page: { size: { width: PAGE_W, height: 16838 }, margin: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN, header: 560, footer: 560 } },
-        titlePage: true },
+      // Techno Q letterhead (as in the Techno Q scope documents): the "30 Dedicated Years" badge centred at the top
+      // and the company banner across the bottom of every page, cover included.
+      properties: { page: { size: { width: PAGE_W, height: PAGE_H }, margin: { top: 2150, bottom: 1800, left: MARGIN, right: MARGIN, header: 560, footer: 1300 } } },
       headers: {
-        default: new Header({ children: [new Paragraph({ tabStops: [{ type: TabStopType.RIGHT, position: TEXT_W }],
-          border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: LINE, space: 4 } },
-          children: [new TextRun({ text: 'TQ Connector for NetSuite', color: GREY, size: 17 }), new TextRun({ text: '\t' + title, color: GREY, size: 17 })] })] }),
-        first: new Header({ children: [new Paragraph({ children: [] })] }),
+        default: new Header({ children: [
+          new Paragraph({ children: [brandImage('badge.jpg', 'jpg', 1085850, 1085850,
+            { relative: d.HorizontalPositionRelativeFrom.PAGE, align: d.HorizontalPositionAlign.CENTER }, 172085)] }),
+          new Paragraph({ tabStops: [{ type: TabStopType.RIGHT, position: TEXT_W }], spacing: { before: 120 },
+            children: [new TextRun({ text: 'TQ Connector for NetSuite', color: GREY, size: 17 }), new TextRun({ text: '\t' + title, color: GREY, size: 17 })] })] }),
       },
       footers: {
         default: new Footer({ children: [new Paragraph({ tabStops: [{ type: TabStopType.RIGHT, position: TEXT_W }],
-          children: [new TextRun({ text: 'Techno Q · Confidential', color: GREY, size: 17 }),
+          children: [
+            brandImage('banner.png', 'png', BANNER_W, BANNER_H, { relative: d.HorizontalPositionRelativeFrom.PAGE, offset: 0 },
+              PAGE_H * 635 - BANNER_H - 40000, true),
+            new TextRun({ text: 'Confidential', color: GREY, size: 17 }),
             new TextRun({ children: ['\tPage ', PageNumber.CURRENT, ' of ', PageNumber.TOTAL_PAGES], color: GREY, size: 17 })] })] }),
-        first: new Footer({ children: [new Paragraph({ children: [] })] }),
       },
       children: separate(children.flat(Infinity)),   // lists come back as arrays
     }],

@@ -1416,12 +1416,45 @@ class InstallTest(unittest.TestCase):
             self.assertTrue(server.fetch_licence(handler, force=True))
             self.assertTrue(handler.licence["ok"])
             self.assertTrue(os.path.exists(handler.licence_path))
+            calls.clear()
             self.assertFalse(server.fetch_licence(handler, force=True))   # already licensed: NetSuite is not asked again
+            self.assertNotIn("licenceSave", calls)                        # NetSuite already has it
             stored["licence"] = self.licence(account="7654321")            # a licence for another account is refused
             os.remove(handler.licence_path)
             server.configure(handler, cfg, TODAY, licence_text="")
             self.assertFalse(server.fetch_licence(handler, force=True))
             self.assertFalse(handler.licence["ok"])
+        finally:
+            server.call_netsuite = saved
+
+    def test_a_licensed_pc_stores_its_licence_in_netsuite_once(self):
+        """A PC signed in before 1.5 never went through the sign-in that shares the licence: it stores it once."""
+        cfg = server.check_config(dict(CFG, accountId="1234567_SB1"))
+        stored = {"licence": ""}
+        calls = []
+        saved = server.call_netsuite
+
+        def netsuite(cfg, payload):
+            calls.append(payload["action"])
+            if payload["action"] == "licenceGet":
+                return {"ok": True, "licence": stored["licence"]}
+            if payload["action"] == "licenceSave":
+                stored["licence"] = payload["licence"]
+            return {"ok": True, "allowed": True, "used": 1, "users": 5}
+        server.call_netsuite = netsuite
+        try:
+            handler = type("H", (server.Handler,), {"config_path": os.path.join(self.folder, "config.json"),
+                                                   "licence_path": os.path.join(self.folder, "licence.json")})
+            server.configure(handler, cfg, TODAY, licence_text=self.licence(account="1234567_SB1"))
+            with open(handler.licence_path, "w", encoding="utf-8") as f:
+                f.write(self.licence(account="1234567_SB1"))
+            self.assertTrue(handler.licence["ok"])
+            server.fetch_licence(handler)
+            self.assertIn("licenceSave", calls)
+            self.assertTrue(stored["licence"])
+            calls.clear()
+            server.fetch_licence(handler)                                   # once per run
+            self.assertEqual(calls, [])
         finally:
             server.call_netsuite = saved
 

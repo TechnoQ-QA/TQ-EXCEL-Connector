@@ -792,14 +792,23 @@ def _detect_fiscal_start(netsuite, ledger):
 def fetch_licence(handler, force=False):
     """No valid licence on this PC: ask NetSuite for the one an administrator stored there (tq_licence.json) and,
     when it is valid for this account, keep it in data\\licence.json and reconnect. At most once a minute."""
-    if handler.mode != "netsuite" or (handler.licence or {}).get("ok"):
+    if handler.mode != "netsuite":
+        return False
+    session = getattr(handler, "session", None)
+    signed_in = session is None or bool(session.info().get("signedIn"))
+    if (handler.licence or {}).get("ok"):
+        # Licensed here: make sure NetSuite has it too, once per run, so a PC that was signed in before 1.5 (and so
+        # never went through the sign-in that shares it) still stores it. Only an administrator's attempt succeeds.
+        if signed_in and not getattr(handler, "_licence_shared", False):
+            handler._licence_shared = True
+            if share_licence(handler):
+                print("Licence stored in NetSuite for the other users.")
         return False
     now = time.time()
     if not force and now - getattr(handler, "_licence_tried", 0) < 60:
         return False
     handler._licence_tried = now
-    session = getattr(handler, "session", None)
-    if session is not None and not session.info().get("signedIn"):
+    if not signed_in:
         return False
     try:
         answer = handler.netsuite({"action": "licenceGet"})
