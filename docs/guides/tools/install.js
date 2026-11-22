@@ -11,7 +11,7 @@ const BUNDLE = '715956';
 const body = [
   ...c.cover('Installation Guide', 'A new client in three steps: install the bundle, run the setup, sign in',
     ['Version 1.5  ·  November 2026', 'For: the client’s NetSuite administrator, IT and users',
-      'NetSuite bundle ' + BUNDLE + '  ·  Connector 1.5.1']),
+      'NetSuite bundle ' + BUNDLE + '  ·  Connector 1.5.2']),
   ...c.toc(),
 
   // ------------------------------------------------------------------ 1
@@ -169,7 +169,7 @@ const body = [
     ['New user', 'Add the TQ Excel User role, run the setup on their PC, sign in.'],
     ['New or replaced PC', 'Run the setup and sign in. To take a user’s filter sets and layouts along: panel gear menu > **Move to another PC** > Export, then Import on the new PC.'],
     ['Seats', 'Setup > **Seats** shows who uses the licence. A seat frees itself after 30 days unused; an administrator can release one at once.'],
-    ['Licence renewal', 'Techno Q sends a new licence.json: the administrator pastes it on Setup > Licence. NetSuite’s copy is replaced at once; every other PC takes it within 6 hours.'],
+    ['Licence renewal', 'From 30 days before the end date the Excel panel shows a reminder. Techno Q sends a new licence.json: the administrator pastes it on Setup > Licence. NetSuite’s copy is replaced at once; every other PC takes it within 6 hours.'],
     ['NetSuite script update', 'Techno Q pushes it through the bundle; nothing to do. The panel says if NetSuite’s script is older than the add-in needs.'],
     ['Connector update', 'Run the new setup file, or accept the update the panel offers. Settings, licence and sign-in are kept.'],
     ['Sandbox refresh', 'Install bundle ' + BUNDLE + ' in the sandbox again if it is missing after the refresh.'],

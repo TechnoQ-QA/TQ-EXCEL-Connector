@@ -20,6 +20,7 @@ import os
 import tqcrypto
 
 FIELDS = ("customer", "account", "users", "expires", "issued")
+WARN_DAYS = 30   # days before the end date from which every user sees a reminder
 
 
 def _public_key():
@@ -80,8 +81,13 @@ def check(licence, account, today=None):
         return dict(info, ok=False, message="The licence has no valid expiry date.")
     if expires < today:
         return dict(info, ok=False, message="The licence ended on %s. Ask Techno Q to renew it." % expires)
-    return dict(info, ok=True, message="Licensed to %s for %s users until %s."
-                                       % (licence.get("customer"), licence.get("users"), expires))
+    days_left = (expires - today).days
+    found = dict(info, ok=True, daysLeft=days_left, message="Licensed to %s for %s users until %s."
+                 % (licence.get("customer"), licence.get("users"), expires))
+    if days_left <= WARN_DAYS:   # shown in the panel and on the setup page, so the renewal comes in time
+        when = "today" if days_left == 0 else "tomorrow" if days_left == 1 else "in %d days" % days_left
+        found["warning"] = "The TQ Connector licence ends %s (%s). Ask Techno Q to renew it." % (when, expires)
+    return found
 
 
 def make(key, customer, account, users, expires, today=None):

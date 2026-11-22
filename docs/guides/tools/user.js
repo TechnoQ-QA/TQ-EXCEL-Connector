@@ -107,6 +107,7 @@ const body = [
   P('The first time you open the panel, the **welcome** screen checks the connection, your sign-in and the licence, then offers to build your first report. Gear menu > Show the welcome again brings it back.'),
   ...one('panel-welcome', 'The welcome screen', 280),
   box('note', 'Seats', 'Your licence allows a number of people at the same time. Your seat follows you to any PC. If all seats are taken you see a message: ask your administrator to release an unused seat.'),
+  box('tip', 'Licence reminder', 'From 30 days before the licence ends, a yellow reminder appears at the top of the panel. Tell your NetSuite administrator: Techno Q sends the renewal, and once it is pasted on Setup > Licence every PC picks it up.'),
 
   // ================================================================ 4
   BR(),
@@ -134,7 +135,7 @@ const body = [
   ], [1700, 2900, 5038]),
 
   H2('4.2 Step 2: the period'),
-  P('Reports that **roll forward** ask for a month; the report keeps that month in cell **B8**, and every column follows it. The others ask for a fiscal year, the columns (one per month, per quarter, or the year as one) and what to compare with (nothing, last year, the budget). Operational reports with dates ask for a from and to date.'),
+  P('Reports that **roll forward** ask for a month; the report keeps that month in cell **B8**, and every column follows it. The others ask for a period: **a whole fiscal year**, or **from one month to another** (for example Oct 2025 to Mar 2026, across years if needed); then the columns (one per month, per quarter, or the year as one) and what to compare with (nothing, last year, the budget). Operational reports with dates ask for a from and to date.'),
   H2('4.3 Step 3: filters'),
   P('Leave a box on **All** for everything, or open it, search and **tick several values**. "With everything under each one" includes the sub-departments or sub-locations. You can also add up to four **dropdown filters** that sit on the report itself (for example Brand or Name), so readers can change them in Excel.'),
   two('u-wizard-month', 'Step 2: the report month', 'u-wizard-filters', 'Step 3: several values in a filter box'),

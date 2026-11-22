@@ -386,6 +386,20 @@
     body.appendChild(list);
   }
 
+  /* NetSuite did not answer (not signed in, offline): say so in the list and below, instead of "Loading…". */
+  function periodsFailed(selects) {
+    return function (e) {
+      selects.forEach(function (sel) {
+        sel.textContent = '';
+        var o = el('option', 'Could not load the periods');
+        o.value = '';
+        sel.appendChild(o);
+      });
+      var m = $('wMessage');
+      if (m) { m.textContent = 'NetSuite did not send the periods (' + (e && e.message || 'no answer') + '). Check you are signed in, then press Back and Next.'; m.className = 'status-line bad'; }
+    };
+  }
+
   function stepPeriods(body) {
     if (w.kind.query) {
       if (!w.kind.dates) { body.appendChild(el('p', 'Nothing to choose: it shows today\'s position. Press Next.', 'hint')); return; }
@@ -403,27 +417,67 @@
     }
     if (w.kind.rolling) {
       var s = select([['', 'Loading…']], '', function (v) { w.month = v; });
-      body.appendChild(field('Report month (change it later on the report to roll forward)', s));
+      body.appendChild(field(w.kind.id === 'balance' ? 'As at the end of' : 'Report month', s));
+      body.appendChild(el('p', {
+        balance: 'The balance sheet shows the position at the end of this month, the same month last year and last year end.',
+        rolling12: 'The report shows the twelve months up to this month.',
+        forecast: 'Actual up to this month, the forecast for the rest of the year.'
+      }[w.kind.id] || (w.kind.dashboard ? 'The dashboard shows this month and the year to date up to it.'
+        : 'The report shows this month and the year to date up to it, so one month is all it needs.')
+        + ' To move it on later, pick another month in cell B8 of the report.', 'hint'));
       Promise.all([months(), TQ.period('CM', -1).catch(function () { return ''; })]).then(function (r) {
         s.textContent = '';
         r[0].forEach(function (p) { var x = el('option', p.name); x.value = p.name; s.appendChild(x); });
         w.month = w.month || r[1] || (r[0].length ? r[0][r[0].length - 1].name : '');
         s.value = w.month;
-      });
+      }).catch(periodsFailed([s]));
       return;
     }
-    var years = select([['', 'Loading…']], '', function (v) { w.year = v; });
-    body.appendChild(field('Fiscal year', years));
-    months().then(function (list) {
-      var found = {};
-      list.forEach(function (p) { var y = /(\d{4})/.exec(p.name); if (y) found[y[1]] = true; });
-      var keys = Object.keys(found).sort();
-      years.textContent = '';
-      keys.forEach(function (y) { var x = el('option', y); x.value = y; years.appendChild(x); });
-      w.year = w.year || String(new Date().getFullYear());
-      if (keys.indexOf(w.year) === -1 && keys.length) w.year = keys[keys.length - 1];
-      years.value = w.year;
-    });
+    // A whole fiscal year, or any run of months (from one month to another, across years if needed)
+    w.span = w.span || 'year';
+    body.appendChild(field('Period', select([['year', 'A whole fiscal year'], ['range', 'From one month to another']],
+      w.span, function (v) { w.span = v; draw(); })));
+    if (w.span === 'range') {
+      var fromSel = select([['', 'Loading…']], '', function (v) { w.fromMonth = v; check(); });
+      var toSel = select([['', 'Loading…']], '', function (v) { w.toMonth = v; check(); });
+      var note = el('div', '', 'hint');
+      var check = function () {
+        var names = Array.prototype.map.call(fromSel.options, function (o) { return o.value; });
+        var a = names.indexOf(w.fromMonth), b = names.indexOf(w.toMonth);
+        note.textContent = a > b ? 'The From month is after the To month: they will be swapped.'
+          : (b - a + 1) + ' month' + (b === a ? '' : 's') + '.';
+      };
+      body.appendChild(field('From month', fromSel));
+      body.appendChild(field('To month', toSel));
+      body.appendChild(note);
+      Promise.all([months(), TQ.period('CM', -1).catch(function () { return ''; })]).then(function (r) {
+        var list = r[0];
+        [fromSel, toSel].forEach(function (s) {
+          s.textContent = '';
+          list.forEach(function (p) { var x = el('option', p.name); x.value = p.name; s.appendChild(x); });
+        });
+        var names = list.map(function (p) { return p.name; });
+        var last = names.indexOf(r[1]) >= 0 ? r[1] : names[names.length - 1];
+        w.toMonth = names.indexOf(w.toMonth) >= 0 ? w.toMonth : last;
+        w.fromMonth = names.indexOf(w.fromMonth) >= 0 ? w.fromMonth : names[Math.max(0, names.indexOf(w.toMonth) - 11)];
+        fromSel.value = w.fromMonth;
+        toSel.value = w.toMonth;
+        check();
+      }).catch(periodsFailed([fromSel, toSel]));
+    } else {
+      var years = select([['', 'Loading…']], '', function (v) { w.year = v; });
+      body.appendChild(field('Fiscal year', years));
+      months().then(function (list) {
+        var found = {};
+        list.forEach(function (p) { var y = /(\d{4})/.exec(p.name); if (y) found[y[1]] = true; });
+        var keys = Object.keys(found).sort();
+        years.textContent = '';
+        keys.forEach(function (y) { var x = el('option', y); x.value = y; years.appendChild(x); });
+        w.year = w.year || String(new Date().getFullYear());
+        if (keys.indexOf(w.year) === -1 && keys.length) w.year = keys[keys.length - 1];
+        years.value = w.year;
+      }).catch(periodsFailed([years]));
+    }
     if (w.kind.id !== 'cashflow') {
       w.shape = w.shape || 'month';
       body.appendChild(field('Columns', select([['month', 'One per month'], ['quarter', 'One per quarter'], ['total', 'The year as one column']],
@@ -515,6 +569,7 @@
         c.type = 'checkbox';
         c.checked = w.dropdowns.indexOf(x.label) !== -1;
         c.addEventListener('change', function () {
+          if (c.checked && w.dropdowns.length >= 4) { c.checked = false; $('wMessage').textContent = 'Up to 4 dropdowns: untick one first.'; return; }
           w.dropdowns = w.dropdowns.filter(function (n) { return n !== x.label; });
           if (c.checked) w.dropdowns.push(x.label);
         });
@@ -556,7 +611,7 @@
     }
     if (w.kind.rolling) parts.push('for ' + (w.month || 'last month') + ', rolling forward from B8');
     else {
-      parts.push(w.year || '');
+      parts.push(w.span === 'range' && w.fromMonth && w.toMonth ? 'from ' + w.fromMonth + ' to ' + w.toMonth : (w.year || ''));
       if (w.kind.id !== 'cashflow') parts.push({ month: 'by month', quarter: 'by quarter', total: 'as one column' }[w.shape || 'month']);
       if (w.compare === 'year') parts.push('against last year');
       if (w.compare === 'budget') parts.push('against the budget');
@@ -595,9 +650,14 @@
     }
     var args = {
       template: w.kind.template || w.kind.id, title: w.title || '', month: w.month || '', year: w.year || '',
+      from: w.span === 'range' ? w.fromMonth || '' : '', to: w.span === 'range' ? w.toMonth || '' : '',
       shape: w.shape || 'month', compare: w.compare || '', filters: w.filters, dropdowns: w.dropdowns,
       pages: w.pages, detail: w.detail, comments: w.comments || !!w.commentAt, highlight: w.highlight, commentAt: w.commentAt || ''
     };
+    if (w.building) return;   // a second click while the first report is being built
+    w.building = true;
+    var createButton = document.querySelector('#wizard .btn.primary');
+    if (createButton) createButton.disabled = true;
     $('wMessage').textContent = w.kind.dashboard ? 'Building the dashboard…' : 'Building the report…';
     if (w.kind.dashboard) args = { kind: w.kind.dashboard, month: w.month || '', filters: w.filters, title: w.title || '' };
     window.TQChat.workbookContext().then(function (context) {
@@ -607,13 +667,22 @@
       if (!data.ok) throw new Error(data.error || 'Request failed');
       if (data.spec) window.TQChat.setSpec(data.spec);
       return window.TQChat.applyActions(data.actions).then(function () {
-        TQPanel.say(data.reply.split('\n')[0]);
+        var lines = String(data.reply || '').split('\n');
+        // later lines are the checks (accounts missing from the layout, lines with no account): keep them on screen
+        if (lines.length > 1) TQPanel.say(lines.join(' '), false, { label: 'OK', run: function () { TQPanel.say(''); } });
+        else TQPanel.say(lines[0]);
         if (w.kind.dashboard && data.actions && data.actions[0] && window.TQPack) TQPack.placeLogo(data.actions[0].sheetName);
         if (data.design && window.TQDesigner) TQDesigner.select(data.design.name);
         window.TQNav.replace('report');
         showCard();
       });
-    }).catch(function (e) { $('wMessage').textContent = e.message; $('wMessage').className = 'status-line bad'; });
+    }).catch(function (e) {
+      $('wMessage').textContent = e.message; $('wMessage').className = 'status-line bad';
+    }).then(function () {
+      w.building = false;
+      var b = document.querySelector('#wizard .btn.primary');
+      if (b) b.disabled = false;
+    });
   }
 
   // ------------------------------------------------------------------ the ribbon --

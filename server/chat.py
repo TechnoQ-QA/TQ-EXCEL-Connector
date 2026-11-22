@@ -844,7 +844,7 @@ class ChatService:
     def _wizard(self, context, args):
         """The report wizard: every report it makes is a layout, so it can be changed and rebuilt in place.
 
-        args: template, title, month (rolling reports), year + shape (month/quarter/total) + compare
+        args: template, title, month (rolling reports), year (or from + to, period names) + shape (month/quarter/total) + compare
         (none/year/budget) for the others, filters {}, dropdowns [], pages, detail, comments, highlight."""
         template = _text(args.get("template")).lower() or "monthytd"
         taken = {s["name"].lower() for s in self._layout_sheets(context)}
@@ -855,11 +855,16 @@ class ChatService:
         if template in self.WIZARD_ROLLING:
             if _text(args.get("month")):
                 design["month"] = _text(args.get("month"))
-        elif template != "cashflow" or _text(args.get("year")):
-            year = int(args.get("year") or periods[self.ledger.current_index()]["fy"])
-            first, last = self.ledger.year_range(year)
-            last = min(last, max(first, self.ledger.current_index())) if year == periods[self.ledger.current_index()]["fy"] \
-                else last
+        elif template != "cashflow" or _text(args.get("year")) or _text(args.get("from")):
+            if _text(args.get("from")) and _text(args.get("to")):   # a range of months: from one period to another
+                first = self.ledger.period_index(_text(args.get("from")))
+                last = self.ledger.period_index(_text(args.get("to")))
+                first, last = min(first, last), max(first, last)
+            else:
+                year = int(args.get("year") or periods[self.ledger.current_index()]["fy"])
+                first, last = self.ledger.year_range(year)
+                last = min(last, max(first, self.ledger.current_index())) \
+                    if year == periods[self.ledger.current_index()]["fy"] else last
             shape = _text(args.get("shape")).lower()
             shape = shape if shape in ("month", "quarter", "total") else "month"
             compare_mode = _text(args.get("compare")).lower()

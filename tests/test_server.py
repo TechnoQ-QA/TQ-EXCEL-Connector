@@ -904,6 +904,17 @@ class LayoutTest(unittest.TestCase):
         self.assertTrue(any(c["data"] == "budget" for c in out["design"]["columns"]))
         out = wiz(template="balance", month="Dec 2025")
         self.assertEqual(out["actions"][1]["rows"][7][1], "Dec 2025")
+        # from one month to another (crossing a year), not only a whole fiscal year
+        out = wiz(template="summary", **{"from": "Oct 2025", "to": "Mar 2026"}, shape="month")
+        self.assertTrue(out["ok"], out)
+        cols = [c["label"] for c in out["design"]["columns"]]
+        self.assertEqual(cols[0], "Oct 2025")
+        self.assertIn("Mar 2026", cols)
+        self.assertNotIn("Sep 2025", cols)
+        self.assertNotIn("Apr 2026", cols)
+        out = wiz(template="management", **{"from": "Mar 2026", "to": "Jan 2026"}, shape="total")   # given backwards
+        self.assertEqual(len([c for c in out["design"]["columns"] if c.get("data") != "budget"]) >= 1, True)
+        self.assertIn("Jan 2026", " ".join(str(c) for c in out["design"]["columns"]))
 
     def test_variance_highlights_and_comments(self):
         out = self.ask("monthly P&L for Oct 2026")
@@ -1422,6 +1433,14 @@ class InstallTest(unittest.TestCase):
         self.assertIn("ended on 2027-12-31", check(good, "1234567_SB1", datetime.date(2028, 1, 1))["message"])
         self.assertIn("signature does not match", check(dict(good, users=50), "1234567_SB1", TODAY)["message"])
         self.assertIn("No licence", check(None, "1234567_SB1", TODAY)["message"])
+        # a reminder from 30 days before the end date (2027-12-31), none before that
+        self.assertNotIn("warning", check(good, "1234567_SB1", datetime.date(2027, 11, 30)))
+        soon = check(good, "1234567_SB1", datetime.date(2027, 12, 1))
+        self.assertTrue(soon["ok"])
+        self.assertEqual(soon["daysLeft"], 30)
+        self.assertIn("ends in 30 days (2027-12-31)", soon["warning"])
+        self.assertIn("ends today", check(good, "1234567_SB1", datetime.date(2027, 12, 31))["warning"])
+        self.assertIn("ends tomorrow", check(good, "1234567_SB1", datetime.date(2027, 12, 30))["warning"])
 
     def test_only_the_account_id_is_needed(self):
         """Sign in with Techno Q's integration and a RESTlet address made from the account: nothing else to type."""

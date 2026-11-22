@@ -46,7 +46,7 @@ import ledger as ledger_module  # noqa: E402
 import licence as licence_module  # noqa: E402
 import tqcrypto  # noqa: E402
 
-VERSION = "1.5.1"
+VERSION = "1.5.2"
 FROZEN = bool(getattr(sys, "frozen", False))   # running as the installed TQConnector.exe
 if FROZEN:
     ROOT = os.path.dirname(os.path.abspath(sys.executable))

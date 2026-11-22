@@ -6,8 +6,8 @@ guide.
 
 | Part | Version (Nov 2026) |
 |---|---|
-| Connector (TQConnector.exe, `server/server.py` `VERSION`) | 1.5.1 |
-| Excel add-in (`addin/manifest.xml` `<Version>`) | 1.5.1.0 |
+| Connector (TQConnector.exe, `server/server.py` `VERSION`) | 1.5.2 |
+| Excel add-in (`addin/manifest.xml` `<Version>`) | 1.5.2.0 |
 | NetSuite script (`netsuite/tq_excel_core.js` `VERSION`) | 8 |
 | NetSuite package (SuiteCloud SDF project, `netsuite/sdf`) | deployed to Techno Q 12253116 and the sandbox 65987_SB1 |
 | NetSuite bundle (what customers install) | **715956** "TQ Excel Connector", in Techno Q's account 12253116 |
@@ -578,6 +578,7 @@ POST (JSON only):
   signs updates. Losing it means no new licences; a new key invalidates every licence issued. Keep an offline copy.
 - Without a valid licence only the connection test reaches NetSuite. Sample data needs no licence.
 - `users` is enforced by seats (6.9).
+- **Expiry reminder (1.5.2).** From 30 days before `expires` (`licence.WARN_DAYS`), `check()` adds `daysLeft` and `warning`. The panel shows it as a yellow banner ("Hide for today", remembered in the browser; not hideable in the last 7 days); the setup page shows it on Overview and Licence. After the end date NetSuite data stops; a pasted renewal is picked up by every PC within about a minute.
 
 **Making a licence (Techno Q only).** Licences are made on the Techno Q PC that holds the private key
 (`%USERPROFILE%\TQ Licence Key\private-key.json`), with Python 3 and the project folder. Customers never run this.

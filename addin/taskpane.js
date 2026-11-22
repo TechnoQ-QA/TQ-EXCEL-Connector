@@ -121,6 +121,7 @@
             ? 'Connected to NetSuite account ' + ping.account + ' as ' + ping.user + (status.ai ? ' · AI add-on on' : '') : '';
           if (s.mode === 'oauth2' && s.signedIn && signOutItem) signOutItem.hidden = false;
           showUpdate(status.update);
+          showLicenceWarning(status.mode === 'netsuite' ? licence : null);
           showScriptVersion(status.mode === 'netsuite' ? ping.version : NEEDED_SCRIPT);
           status.ping = ping;
           return status;
@@ -154,6 +155,37 @@
   }
 
   /* A newer signed version of the connector: one line with Install (the setup restarts the connector). */
+  /* The licence ends within 30 days: a reminder at the top of the panel. "Hide for today" hides it until tomorrow
+   * (remembered in this browser only); in the last 7 days it cannot be hidden. */
+  function showLicenceWarning(licence) {
+    var old = document.getElementById('licenceNotice');
+    if (old) old.remove();
+    if (!licence || !licence.ok || !licence.warning) return;
+    var today = new Date().toISOString().slice(0, 10);
+    var key = 'tq.licenceHidden';
+    var urgent = typeof licence.daysLeft === 'number' && licence.daysLeft <= 7;
+    try { if (!urgent && localStorage.getItem(key) === today) return; } catch (e) { /* no storage: always show */ }
+    var line = document.createElement('div');
+    line.id = 'licenceNotice';
+    line.className = 'banner warn';
+    line.setAttribute('role', 'status');
+    var text = document.createElement('div');
+    text.className = 'grow';
+    text.textContent = licence.warning;
+    line.appendChild(text);
+    if (!urgent) {
+      var b = document.createElement('button');
+      b.className = 'btn';
+      b.textContent = 'Hide for today';
+      b.addEventListener('click', function () {
+        try { localStorage.setItem(key, today); } catch (e) { /* not remembered */ }
+        line.remove();
+      });
+      line.appendChild(b);
+    }
+    $('banners').insertBefore(line, $('banners').firstChild);
+  }
+
   function showUpdate(update) {
     var old = document.getElementById('updateNotice');
     if (old) old.remove();

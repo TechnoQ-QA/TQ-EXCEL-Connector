@@ -10,7 +10,7 @@ const PROJECT = 'C:\\Users\\<you>\\Desktop\\Development\\netsuite-excel-connecto
 const body = [
   ...c.cover('Techno Q Delivery Guide', 'Licences, the delivery pack, test installations, renewals and releases',
     ['Version 1.5  ·  November 2026', 'Internal: Techno Q only. Do not send to clients.',
-      'NetSuite bundle ' + BUNDLE + '  ·  Connector 1.5.1']),
+      'NetSuite bundle ' + BUNDLE + '  ·  Connector 1.5.2']),
   ...c.toc(),
 
   // ------------------------------------------------------------------ 1
@@ -47,7 +47,7 @@ const body = [
   ], [3300, 3100, 3238], { header: true }),
   H2('2.1 Check the setup file before sending'),
   steps([
-    'Right-click `TQConnectorSetup.exe` > **Properties** > **Details**: **Product version** must be the version you mean to deliver (now **1.5.1**).',
+    'Right-click `TQConnectorSetup.exe` > **Properties** > **Details**: **Product version** must be the version you mean to deliver (now **1.5.2**).',
     'Its fingerprint, for the client’s IT if they ask: in PowerShell `Get-FileHash .\\TQConnectorSetup.exe` (the build prints the same SHA-256).',
     'If the build folder is older than the last change, rebuild first: `powershell -ExecutionPolicy Bypass -File installer\\build.ps1` in the project folder (about 2 minutes).',
   ]),
@@ -149,6 +149,7 @@ const body = [
   table([
     ['Situation', 'What Techno Q does', 'What the client sees'],
     ['Licence valid', 'Nothing', 'Setup > Overview shows “until <date>”. Seats list on Setup > Seats.'],
+    ['Last 30 days', 'Send the renewal.', 'A yellow reminder in the Excel panel (“ends in N days”); in the last 7 days it cannot be hidden.'],
     ['Renewal (new end date)', 'Make a new licence, same account, new `--expires`. Send it.', 'Administrator pastes it on Setup > Licence. Every PC takes it within 6 hours.'],
     ['More users', 'New licence with the higher `--users` (keep the end date).', 'Same as a renewal. New users can sign in once it has reached NetSuite.'],
     ['Fewer users', 'New licence with the lower `--users`.', 'Extra seats stop working; an administrator releases the unused ones on Setup > Seats.'],
@@ -158,7 +159,7 @@ const body = [
     ['Licence for the wrong account', 'Make it again with the right account ID.', '“The licence is for NetSuite account X, not Y”; nothing is saved.'],
   ], [2400, 3400, 3838], { header: true }),
   spacer(),
-  box('note', 'No reminder before the end date', 'The connector does not warn ahead of expiry. Keep the end dates in Techno Q’s licence register and send renewals at least two weeks early.'),
+  box('note', 'Reminder before the end date', 'From 30 days before the end date every user sees a yellow reminder at the top of the Excel panel, and the setup page shows the days left. Still keep the end dates in Techno Q’s licence register and send renewals before the reminder starts.'),
 
   // ------------------------------------------------------------------ 6
   BR(),

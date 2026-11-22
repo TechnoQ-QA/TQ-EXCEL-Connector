@@ -22,6 +22,7 @@
 
   function showLicence(licence) {
     if (!licence) box('licenceState', 'No licence checked yet: it is checked once the NetSuite account is saved.');
+    else if (licence.ok && licence.warning) box('licenceState', licence.message + ' ' + licence.warning + ' When the renewal arrives, paste it below and save: every PC picks it up within 6 hours.', 'warn');
     else box('licenceState', licence.message, licence.ok ? 'ok' : 'bad');
   }
 
@@ -54,7 +55,9 @@
     $('statRole').textContent = s.signedIn ? (s.role || '') : '';
     var l = data.licence;
     $('statLicence').textContent = l ? (l.ok ? (l.users ? l.users + ' users' : 'Valid') : 'Not valid') : 'None';
-    $('statLicenceNote').textContent = l && l.ok && l.expires ? 'until ' + l.expires : l && !l.ok ? 'see Licence' : '';
+    $('statLicenceNote').textContent = l && l.ok && l.expires
+      ? 'until ' + l.expires + (l.warning ? ' · ends in ' + l.daysLeft + (l.daysLeft === 1 ? ' day' : ' days') : '')
+      : l && !l.ok ? 'see Licence' : '';
     $('statVersion').textContent = data.version || '';
     $('statUpdate').textContent = data.updateUrl ? 'updates on' : 'updates by hand';
     $('navConnection').textContent = on ? '✓' : '';
@@ -62,8 +65,24 @@
     $('navLicence').className = l && !l.ok ? 'bad' : '';
   }
 
+  /* Fields typed but not saved yet: coming back to the window must not overwrite them (only the status is
+   * refreshed then, for example after signing in in the NetSuite tab). */
+  var edited = false;
+  document.addEventListener('input', function (e) { if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) edited = true; });
+  function refreshStatus() {
+    fetch('/api/setup').then(function (r) { return r.json(); }).then(function (data) {
+      stats(data);
+      var s = data.signIn;
+      if (s) box('signInState', s.signedIn ? 'Signed in to NetSuite as ' + (s.user || 'you') + (s.role ? ' (' + s.role + ')' : '') +
+        ' since ' + s.since + '.' : 'Not signed in yet: press Sign in with NetSuite.', s.signedIn ? 'ok' : '');
+      $('signOut').hidden = !(s && s.signedIn);
+      showLicence(data.licence);
+    }).catch(function () {});
+  }
+
   function load() {
     fetch('/api/setup').then(function (r) { return r.json(); }).then(function (data) {
+      edited = false;
       stats(data);
       if (data.certExpires) {
         var soon = data.certDaysLeft !== null && data.certDaysLeft <= 60;
@@ -200,7 +219,7 @@
     fetch('/api/signout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
       .then(function () { load(); });
   });
-  window.addEventListener('focus', load);   // back from the NetSuite sign-in tab: show who is signed in
+  window.addEventListener('focus', function () { if (edited) refreshStatus(); else load(); });   // back from the NetSuite sign-in tab
   /* Updates: the address is saved with Save; Check reads the signed description, Install runs the new setup. */
   $('checkUpdate').addEventListener('click', function () {
     box('updateState', 'Checking…');
