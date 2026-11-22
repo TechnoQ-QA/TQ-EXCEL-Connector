@@ -3,7 +3,9 @@ the connector needs in a customer's NetSuite account in one go.
 
     python scripts/package_netsuite.py
 
-copies the three scripts from netsuite/ into the package's File Cabinet folder and checks the package:
+copies the scripts from netsuite/ into the package's File Cabinet folder and checks the package. The Suitelet
+(tq_excel_elevated.js) is written with the library (tq_excel_core.js) inside it, so it needs no other file: a
+NetSuite bundle then picks up everything by itself (SuiteBundler does not follow a script's define() imports).
 - every object file is well-formed XML and points at a script that is in the package;
 - the Suitelet's script and deployment IDs are the ones the RESTlet calls;
 - the Suitelet runs as Administrator and is not available without login.
@@ -23,11 +25,41 @@ FOLDER = "/SuiteScripts/TQ Excel Connector"
 SCRIPTS = ("tq_excel_core.js", "tq_excel_restlet.js", "tq_excel_elevated.js")
 
 
+def combined():
+    """tq_excel_elevated.js with tq_excel_core.js inside it: one file, no define() import."""
+    core = open(os.path.join(SOURCE, "tq_excel_core.js"), encoding="utf-8").read().replace("\r\n", "\n")
+    runner = open(os.path.join(SOURCE, "tq_excel_elevated.js"), encoding="utf-8").read().replace("\r\n", "\n")
+    head = re.search(r"^define\((\[[^\]]*\]), \(([^)]*)\) => \{\n", core, re.M)
+    if not head or not core.rstrip().endswith("});"):
+        raise ValueError("tq_excel_core.js does not have the expected define(...) => { ... }); shape")
+    body = core[head.end():core.rstrip().rfind("});")]
+    use = re.search(r"^define\(\['\./tq_excel_core'\], \(connector\) => \{\n(.*)\}\);\s*$", runner, re.M | re.S)
+    if not use:
+        raise ValueError("tq_excel_elevated.js does not have the expected define(['./tq_excel_core'], ...) shape")
+    header = "\n".join([
+        "/**",
+        " * TQ Excel Connector - elevated runner, with the query library inside it. Written by",
+        " * scripts/package_netsuite.py from netsuite/tq_excel_elevated.js and netsuite/tq_excel_core.js: edit those.",
+        " *",
+        " * Deploy with Execute As Role = Administrator. Who may ask is checked inside (assertReportAccess).",
+        " *",
+        " * @NApiVersion 2.1",
+        " * @NScriptType Suitelet",
+        " */",
+        ""])
+    return "%sdefine(%s, (%s) => {\n  const connector = (() => {\n%s  })();\n\n%s});\n" % (
+        header, head.group(1), head.group(2), body, use.group(1))
+
+
 def copy():
     target = os.path.join(PROJECT, "FileCabinet", *FOLDER.strip("/").split("/"))
     os.makedirs(target, exist_ok=True)
     for name in SCRIPTS:
-        shutil.copyfile(os.path.join(SOURCE, name), os.path.join(target, name))
+        if name == "tq_excel_elevated.js":
+            with open(os.path.join(target, name), "w", encoding="utf-8", newline="\n") as f:
+                f.write(combined())
+        else:
+            shutil.copyfile(os.path.join(SOURCE, name), os.path.join(target, name))
     return target
 
 
@@ -72,7 +104,11 @@ def check():
             problems.append("The elevated Suitelet must not be available without login")
     for name in SCRIPTS:
         packed = os.path.join(PROJECT, "FileCabinet", *FOLDER.strip("/").split("/"), name)
-        if os.path.exists(packed) and open(packed, "rb").read() != open(os.path.join(SOURCE, name), "rb").read():
+        if not os.path.exists(packed):
+            continue
+        want = combined().encode() if name == "tq_excel_elevated.js" else open(os.path.join(SOURCE, name), "rb").read()
+        crlf, lf = bytes([13, 10]), bytes([10])
+        if open(packed, "rb").read().replace(crlf, lf) != want.replace(crlf, lf):
             problems.append("%s in the package differs from netsuite/%s; run this script" % (name, name))
     version = re.search(r"const VERSION = (\d+)", open(os.path.join(SOURCE, "tq_excel_core.js"), encoding="utf-8").read())
     if not version:

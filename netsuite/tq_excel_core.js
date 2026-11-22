@@ -44,7 +44,7 @@ define(['N/query', 'N/runtime', 'N/search', 'N/record', 'N/file', 'N/config'], (
     class: { table: 'classification', feature: 'CLASSES', column: 'tl.class' },
     location: { table: 'location', feature: 'LOCATIONS', column: 'tl.location' }
   };
-  const VERSION = 7;   // 3 budgets; 4 statistical accounts, Book/Currency, journals, seats; 5 branding; 6 seats per user; 7 report library
+  const VERSION = 8;   // 3 budgets; 4 statistical accounts, Book/Currency, journals, seats; 5 branding; 6 seats per user; 7 report library; 8 licence in NetSuite
   const MAX_BATCH = 2000;
   const EXTRA_FIELDS = {
     name: { column: 'COALESCE(tl.entity, t.entity)', label: 'Name' },
@@ -943,6 +943,30 @@ define(['N/query', 'N/runtime', 'N/search', 'N/record', 'N/file', 'N/config'], (
     return libraryList(user);
   };
 
+  // ------------------------------------------------------------------ licence --
+  // The customer's licence from Techno Q, stored once by an administrator (version 8), so every user's connector
+  // gets it at its first sign-in instead of a file being copied to each PC. The connector checks its signature.
+  const LICENCE_FILE = 'tq_licence.json';
+
+  const licenceGet = () => {
+    const home = rows("SELECT id, folder FROM file WHERE name = 'tq_excel_core.js'")[0];
+    if (!home) return { licence: '' };
+    const found = rows('SELECT id FROM file WHERE name = ? AND folder = ?', [LICENCE_FILE, Number(home.folder)])[0];
+    return { licence: found ? file.load({ id: Number(found.id) }).getContents() : '' };
+  };
+
+  const licenceSave = (user, request) => {
+    if (!isAdministrator(user)) throw new Error('Only an administrator can store the licence in NetSuite');
+    const text = clean(request.licence);
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch (e) { parsed = null; }
+    if (!parsed || !parsed.signature || !parsed.account) throw new Error('That is not a TQ licence');
+    const home = rows("SELECT id, folder FROM file WHERE name = 'tq_excel_core.js'")[0];
+    if (!home) throw new Error('Cannot find tq_excel_core.js in the File Cabinet');
+    file.create({ name: LICENCE_FILE, fileType: file.Type.JSON, contents: text, folder: Number(home.folder) }).save();
+    return { saved: true };
+  };
+
   // ----------------------------------------------------------------- journals --
   // Journal upload (version 4): rows of the Excel sheet with the same Entry number become one journal entry.
   const JOURNAL_PERMISSIONS = ['TRAN_JOURNAL'];
@@ -1088,8 +1112,17 @@ define(['N/query', 'N/runtime', 'N/search', 'N/record', 'N/file', 'N/config'], (
               end: p.enddate
             }))
           };
-        case 'setup':
-          return { ok: true, version: VERSION, oneWorld: oneWorld(), multiCurrency: currencies(ctx, null) > 1 };
+        case 'setup': {
+          // the first month of the fiscal year, from the latest fiscal year period (version 8), so nobody sets it
+          let fiscalStartMonth = 0;
+          try {
+            const year = rows("SELECT TO_CHAR(startdate, 'MM') AS m FROM accountingperiod WHERE isyear = 'T' ORDER BY startdate DESC")[0];
+            fiscalStartMonth = year ? Number(year.m) : 0;
+          } catch (e) {
+            fiscalStartMonth = 0;
+          }
+          return { ok: true, version: VERSION, oneWorld: oneWorld(), multiCurrency: currencies(ctx, null) > 1, fiscalStartMonth };
+        }
         case 'budgetInfo':
           return Object.assign({ ok: true }, budgetInfo(ctx, user));
         case 'budgetSave':
@@ -1104,6 +1137,10 @@ define(['N/query', 'N/runtime', 'N/search', 'N/record', 'N/file', 'N/config'], (
           return Object.assign({ ok: true }, seatRelease(user, request));
         case 'branding':
           return Object.assign({ ok: true }, branding(ctx, request));
+        case 'licenceGet':
+          return Object.assign({ ok: true }, licenceGet());
+        case 'licenceSave':
+          return Object.assign({ ok: true }, licenceSave(user, request));
         case 'libraryList':
           return Object.assign({ ok: true }, libraryList(user));
         case 'librarySave':

@@ -6,12 +6,14 @@ guide.
 
 | Part | Version (Nov 2026) |
 |---|---|
-| Connector (TQConnector.exe, `server/server.py` `VERSION`) | 1.4.0 |
-| Excel add-in (`addin/manifest.xml` `<Version>`) | 1.4.0.0 |
-| NetSuite script (`netsuite/tq_excel_core.js` `VERSION`) | 7 |
-| NetSuite package (SuiteCloud SDF project, `netsuite/sdf`) | deployed to the sandbox 65987_SB1 |
+| Connector (TQConnector.exe, `server/server.py` `VERSION`) | 1.5.0 |
+| Excel add-in (`addin/manifest.xml` `<Version>`) | 1.5.0.0 |
+| NetSuite script (`netsuite/tq_excel_core.js` `VERSION`) | 8 |
+| NetSuite package (SuiteCloud SDF project, `netsuite/sdf`) | deployed to Techno Q 12253116 and the sandbox 65987_SB1 |
+| NetSuite bundle (what customers install) | **715956** "TQ Excel Connector", in Techno Q's account 12253116 |
+| Sign-in integration (shared by every customer) | "TQ Excel Connector" in 12253116, Client ID `028fcb4f...b34f` (`DEFAULT_CLIENT_ID`) |
 | Source | private GitHub repository `TechnoQ-QA/TQ-EXCEL-Connector`, branch `main` |
-| Tests | 90 (`python -m unittest discover -s tests`) |
+| Tests | 92 (`python -m unittest discover -s tests`) |
 
 ---
 
@@ -225,12 +227,13 @@ Administrator. If it does not, the error says "Deploy the elevated Suitelet with
 
 ### 4.5 Files the script writes in the File Cabinet
 
-Both sit in the same folder as `tq_excel_core.js` and are created on first use.
+All sit in the same folder as `tq_excel_core.js` and are created on first use.
 
 | File | Content |
 |---|---|
 | `tq_seats.json` | `{machines: {key: {label, user, last}}}`; key `u<employee id>` with sign-in, else the PC's id. A seat not used for 30 days is free; entries older than 120 days are removed. Written at most twice a day per seat. |
 | `tq_library.json` | `{items: {id: {name, description, design, by, byId, at}}}`; id is the name in lower case with dashes. Up to 200,000 characters per layout. |
+| `tq_licence.json` | The licence exactly as Techno Q issued it (customer, account, users, expires, issued, signature), written by `licenceSave` (administrator only, account must match). Since script version 8. |
 
 ### 4.6 The SDF package (`netsuite/sdf`)
 
@@ -277,22 +280,58 @@ Deploy history on the sandbox 65987_SB1: first deploy (29/29 steps, existing han
 version 6 (19 Nov 2026), version 7 (19 Nov 2026, library saved, read and removed live). A stray older
 `tq_excel_restlet.js` directly in SuiteScripts (file 14736) is unused and can be deleted.
 
-### 4.7 NetSuite setup outside the package
+### 4.7 NetSuite setup at a customer (since 1.5)
 
-Per account, by an administrator:
+Per account, by the customer's administrator, about 10 minutes:
 
-1. **Enable features** (Setup > Company > Enable Features > SuiteCloud): Server SuiteScript, SuiteCloud
-   Development Framework, OAuth 2.0 (and Token-Based Authentication only if TBA is used).
-2. **Integration record** for sign-in (Setup > Integration > Manage Integrations > New), name "TQ Excel Connector":
-   - OAuth 2.0: **Authorization Code Grant** ticked, **Public Client** ticked, scope **RESTlets**;
-   - Redirect URI `https://localhost:3000/oauth/callback`;
-   - refresh token validity and rotation: 720 hours (30 days) used on the sandbox;
-   - the **Client ID** goes into the connector (setup page or installer); the client secret is not used and must
-     not be shared.
-   Sandbox: integration record id 110.
-3. **Roles**: give each Excel user the role TQ Excel User next to their own roles (or use a role that already has
-   the report permissions).
-4. **RESTlet URL**: Customization > Scripting > Script Deployments > TQ Excel Connector RESTlet > External URL.
+1. **Enable features** (Setup > Company > Enable Features > SuiteCloud): Server SuiteScript and OAuth 2.0 (both
+   usually on already).
+2. **Install bundle 715956** (Customization > SuiteBundler > Search & Install Bundles). It brings the two scripts and
+   their deployments, the role TQ Excel User and the sign-in integration.
+3. **Roles**: give each Excel user TQ Excel User next to their own roles.
+
+Nothing is copied by hand any more:
+
+| Before 1.5 | Since 1.5 |
+|---|---|
+| Integration record per customer, Client ID copied to every PC | One integration owned by Techno Q (12253116), public client, built into the connector as `DEFAULT_CLIENT_ID`. NetSuite installs it in the customer's account at the first sign-in (proven against 65987_SB1), and the bundle carries it too. `clientId` in `config.json` still overrides it. |
+| RESTlet External URL copied | `restlet_url(account)`: `https://<account, lower case, _ as ->.restlets.api.netsuite.com/app/site/hosting/restlet.nl?script=customscript_tq_excel_restlet&deploy=customdeploy_tq_excel_restlet` (script IDs work in place of numbers) |
+| Fiscal year start typed | The `setup` action returns `fiscalStartMonth` (start month of the latest accounting period with `isyear='T'`); the connector reads it in the background when `fiscalYearStartMonth` is not set |
+| `licence.json` copied to every PC | Stored once in NetSuite (`tq_licence.json`, 4.5). Actions `licenceGet` (any user) and `licenceSave` (administrator only). The connector asks for it after sign-in and on status checks (at most once a minute), verifies signature and account, and writes `data\licence.json`. A licence chosen in the installer or pasted on the setup page is pushed to NetSuite when the user is an administrator. |
+
+Integration settings (12253116): Authorization Code Grant, Public Client, scope RESTlets, redirect
+`https://localhost:3000/oauth/callback`, refresh token validity and rotation 720 hours. Its client secret is not used
+and must not be shared. The old sandbox integration (65987_SB1, record 110) is no longer needed.
+
+### 4.8 The SuiteBundle (715956)
+
+Built with SuiteBundler in Techno Q's account 12253116 (Customization > SuiteBundler > Create Bundle), from the
+objects that the SDF package deployed there:
+
+| Component | Id | Lock |
+|---|---|---|
+| File `SuiteScripts/TQ Excel Connector/tq_excel_restlet.js` | 633 | locked, **hidden in SuiteBundle** |
+| File `SuiteScripts/TQ Excel Connector/tq_excel_elevated.js` | 632 | locked, **hidden in SuiteBundle** |
+| Script `customscript_tq_excel_restlet` (RESTlet, with deployment) | 319 | locked, update deployments |
+| Script `customscript_tq_excel_elevated` (Suitelet, run as Administrator) | 318 | locked, update deployments |
+| Integration "TQ Excel Connector" | 2 | locked |
+| Role `customrole_tq_excel_user` | 1100 | not locked (customers may add permissions) |
+
+- SuiteBundler does not follow SuiteScript 2 `define()` imports, so `tq_excel_core.js` would be missing at the
+  customer. `scripts/package_netsuite.py` therefore writes the Suitelet **with the library inside it**
+  (`combined()`): `define(<core deps>, (<core params>) => { const connector = (() => { <core body> })(); <Suitelet
+  body> });`. The RESTlet needs no library. Edit `netsuite/tq_excel_core.js` and `netsuite/tq_excel_elevated.js`;
+  the package script and a test check the combined copy.
+- Availability: **Public** (since 22 Nov 2026): any NetSuite account installs it by ID 715956; the licence controls
+  use. Changed on Customization > SuiteBundler > Create Bundle > List > Set Availability.
+- Releasing a new script version: deploy the SDF package to 12253116 (auth ID `tq-publisher`), then Customization >
+  SuiteBundler > Create Bundle > List > 715956 > **Push** to the customer accounts (or customers update from
+  Installed Bundles).
+- NetSuite now recommends Copy to Account or SDF over SuiteBundler; SuiteBundler is still supported and is the only
+  route for installing by ID without a CLI at the customer.
+
+SuiteCloud CLI authentication IDs on the Techno Q PC (`netsuite/sdf/project.json` `defaultAuthId`): `tq-publisher`
+(12253116, Administrator) and `tq-sandbox` (65987_SB1).
 
 ---
 
@@ -495,10 +534,10 @@ POST (JSON only):
 | Key | Meaning |
 |---|---|
 | `accountId` | NetSuite account, e.g. `1234567` or `1234567_SB1` |
-| `restletUrl` | The RESTlet's External URL |
-| `clientId` | Integration client ID: **Sign in with NetSuite** (empty = TBA) |
+| `restletUrl` | Optional: derived from `accountId` when empty (4.7) |
+| `clientId` | Optional: Techno Q's shared integration when empty; TBA when the four TBA keys are given and no client ID |
 | `consumerKey`, `consumerSecret`, `tokenId`, `tokenSecret` | TBA only (legacy) |
-| `fiscalYearStartMonth` | 1-12 |
+| `fiscalYearStartMonth` | Optional 1-12: read from NetSuite when empty |
 | `updateUrl` | https address of `update.json` (optional) |
 | `autoUpdateCheck` | `false` turns off the weekly update check |
 | `ai` | `{apiKey, model}`: optional AI add-on with the customer's own key; default model `claude-opus-5-5` |
@@ -614,14 +653,14 @@ Chat, Keyboard shortcuts, Move to another PC. Header: logo, account and user, he
 |---|---|
 | AppId | `{A7C3E1D2-5B64-4F0A-9C21-7E8D3B9F4A10}` |
 | Install | Per user, no administrator rights; `%LOCALAPPDATA%\TQ Connector` |
-| Pages (first install only) | Welcome; **Connect to NetSuite** (account ID, RESTlet URL, client ID; RESTlet URL checked); **Licence** (file); skipped when a config exists or `TQConnector.settings.json` sits next to the setup file |
+| Pages (first install only) | Welcome; **Connect to NetSuite** (account ID only; a pasted NetSuite address is reduced to the account); **Licence** (optional file, for the administrator's PC); skipped when a config exists or `TQConnector.settings.json` sits next to the setup file |
 | Prepared roll-out | `TQConnector.settings.json` (a prepared config.json) and `licence.json` next to the setup file are copied in; no typing |
 | Before copying | Stops every TQConnector.exe; deletes the old program files (not `data\`); removes the old script installer's uninstall entry |
 | Registry | `HKCU\Software\Microsoft\Office\16.0\WEF\Developer\6f1c2a9e-...` = `{app}\addin\manifest.xml` (removed on uninstall) |
 | Shortcuts | Startup and Start menu "TQ Connector" -> `TQConnector.exe --watch` |
 | After copying | Saves the entered settings; makes the certificate (`--make-cert`) if missing; trusts it (`certutil -user -addstore Root`, Windows asks); starts `--watch`; first install offers to open the setup page |
 | Uninstall | Stops the connector, removes the add-in registration, shortcuts, program files, and exactly this PC's certificate (by thumbprint); keeps `data\` |
-| Silent | `TQConnectorSetup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART` (must run as the user, not SYSTEM) |
+| Silent | `TQConnectorSetup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /ACCOUNT=1234567 [/LICENCE="path"]` (must run as the user, not SYSTEM) |
 
 ### 8.2 Build (`installer/build.ps1`)
 
@@ -717,7 +756,7 @@ python scripts/make_icons.py                          # regenerate icons
 | "Not signed in" | Sign in with NetSuite (panel header or setup page). Refresh tokens last up to 30 days. |
 | "None of your NetSuite roles may run financial reports" | Give the user TQ Excel User or a role with the report permissions. |
 | "Deploy the elevated Suitelet with Execute As Role = Administrator" | Fix the Suitelet deployment (the package sets it). |
-| Banner "NetSuite has TQ script version N" | Deploy the package again (version 7 needed). |
+| Banner "NetSuite has TQ script version N" | Push bundle 715956 to the account (version 8 needed). |
 | Seats full | Setup page > Seats: release unused seats, or extend the licence. |
 | "Invalid Redirect URI" when signing in | The integration's redirect URI must be exactly `https://localhost:3000/oauth/callback`. |
 | Ribbon icons missing | Clear the Office cache (`%LOCALAPPDATA%\Microsoft\Office\16.0\Wef`), restart Excel. |

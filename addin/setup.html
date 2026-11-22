@@ -120,9 +120,9 @@
         <select id="fiscal"></select>
         <details class="fold" id="advanced">
           <summary>Advanced: RESTlet address and client ID</summary>
-          <label for="restletUrl">RESTlet External URL (Customization &gt; Scripting &gt; Script Deployments &gt; TQ Excel Connector RESTlet)</label>
+          <label for="restletUrl">RESTlet External URL: leave empty, it is worked out from the account ID (only for a RESTlet with other script IDs)</label>
           <input id="restletUrl" autocomplete="off" placeholder="https://1234567.restlets.api.netsuite.com/app/site/hosting/restlet.nl?script=...&amp;deploy=1" />
-          <label for="clientId">Client ID of the TQ Excel Connector integration (Setup &gt; Integration &gt; Manage Integrations)</label>
+          <label for="clientId">Client ID: leave empty to use Techno Q's sign-in (only for an integration record of your own)</label>
           <input id="clientId" autocomplete="off" />
           <p class="hint">The integration needs: Authorization Code Grant, Public Client, scope RESTlets, and the redirect URI
             <code id="redirectUri">https://localhost:3000/oauth/callback</code>.</p>
@@ -132,7 +132,8 @@
       <!-- licence -->
       <section data-section="licence" hidden>
         <h2>Licence</h2>
-        <p class="sub">The licence file from Techno Q: who it is for, the NetSuite account and the number of users.</p>
+        <p class="sub">The licence from Techno Q: who it is for, the NetSuite account and the number of users. An administrator
+          pastes it once: it is stored in NetSuite and every user's PC picks it up when they sign in.</p>
         <div id="licenceState" class="box">No licence yet.</div>
         <label for="licence">Paste a new licence (leave empty to keep the current one)</label>
         <textarea id="licence" rows="5" spellcheck="false" placeholder='{"customer": "...", "account": "...", "signature": "..."}'></textarea>

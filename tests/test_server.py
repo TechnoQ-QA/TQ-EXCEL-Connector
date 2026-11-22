@@ -1383,6 +1383,48 @@ class InstallTest(unittest.TestCase):
         self.assertIn("signature does not match", check(dict(good, users=50), "1234567_SB1", TODAY)["message"])
         self.assertIn("No licence", check(None, "1234567_SB1", TODAY)["message"])
 
+    def test_only_the_account_id_is_needed(self):
+        """Sign in with Techno Q's integration and a RESTlet address made from the account: nothing else to type."""
+        cfg = server.check_config({"accountId": "1234567_sb1"})
+        self.assertEqual(cfg["accountId"], "1234567_SB1")
+        self.assertEqual(cfg["clientId"], server.DEFAULT_CLIENT_ID)
+        self.assertEqual(cfg["restletUrl"], "https://1234567-sb1.restlets.api.netsuite.com/app/site/hosting/restlet.nl"
+                                            "?script=customscript_tq_excel_restlet&deploy=customdeploy_tq_excel_restlet")
+        own = server.check_config({"accountId": "1", "clientId": "mine", "restletUrl": "https://1.restlets.api.netsuite.com/x"})
+        self.assertEqual((own["clientId"], own["restletUrl"]), ("mine", "https://1.restlets.api.netsuite.com/x"))
+        tba = server.check_config(dict(CFG))   # four keys and no client ID: token-based authentication stays
+        self.assertFalse(tba.get("clientId"))
+
+    def test_licence_comes_from_netsuite(self):
+        """A new PC without a licence file gets the one an administrator stored in NetSuite."""
+        cfg = server.check_config(dict(CFG, accountId="1234567_SB1"))
+        stored = {"licence": self.licence(account="1234567_SB1")}
+        calls = []
+        saved = server.call_netsuite
+
+        def netsuite(cfg, payload):
+            calls.append(payload["action"])
+            if payload["action"] == "licenceGet":
+                return {"ok": True, "licence": stored["licence"]}
+            return {"ok": True, "allowed": True, "used": 1, "users": 5}
+        server.call_netsuite = netsuite
+        try:
+            handler = type("H", (server.Handler,), {"config_path": os.path.join(self.folder, "config.json"),
+                                                   "licence_path": os.path.join(self.folder, "licence.json")})
+            server.configure(handler, cfg, TODAY, licence_text="")
+            self.assertFalse(handler.licence["ok"])
+            self.assertTrue(server.fetch_licence(handler, force=True))
+            self.assertTrue(handler.licence["ok"])
+            self.assertTrue(os.path.exists(handler.licence_path))
+            self.assertFalse(server.fetch_licence(handler, force=True))   # already licensed: NetSuite is not asked again
+            stored["licence"] = self.licence(account="7654321")            # a licence for another account is refused
+            os.remove(handler.licence_path)
+            server.configure(handler, cfg, TODAY, licence_text="")
+            self.assertFalse(server.fetch_licence(handler, force=True))
+            self.assertFalse(handler.licence["ok"])
+        finally:
+            server.call_netsuite = saved
+
     def test_netsuite_waits_for_a_licence(self):
         cfg = server.check_config(dict(CFG))
         calls = []
@@ -1398,7 +1440,8 @@ class InstallTest(unittest.TestCase):
             server.configure(handler, cfg, TODAY, licence_text=self.licence(account="1234567_SB1"))
             self.assertTrue(handler.licence["ok"])
             handler.backend({"action": "accounts"})
-            self.assertEqual(calls, ["ping", "seat", "accounts"])   # this PC's seat is checked first
+            # this PC's seat is checked first ("setup" is the fiscal year look-up, in the background)
+            self.assertEqual([c for c in calls if c != "setup"], ["ping", "seat", "accounts"])
         finally:
             server.call_netsuite = saved
 

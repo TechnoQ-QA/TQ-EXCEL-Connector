@@ -95,15 +95,17 @@ end;
 procedure InitializeWizard();
 begin
   InfoPage := CreateInputQueryPage(wpWelcome, 'Connect to NetSuite',
-    'Your NetSuite details (you can also enter or change them later on the setup page).',
-    'From your NetSuite administrator: the account ID, the TQ Excel Connector RESTlet''s External URL, and the client ID of ' +
-    'the TQ Excel Connector (sign-in) integration. Leave them empty to enter them later.');
-  InfoPage.Add('Account ID (e.g. 1234567 or 1234567_SB1):', False);
-  InfoPage.Add('RESTlet External URL:', False);
-  InfoPage.Add('Client ID (Sign in with NetSuite):', False);
-  LicencePage := CreateInputFilePage(InfoPage.ID, 'Licence', 'The licence file from Techno Q.',
-    'Choose the licence file you received (you can also paste it later on the setup page).');
+    'Your NetSuite account ID: the only thing to type.',
+    'It is the number at the start of your NetSuite address, for example 1234567 in https://1234567.app.netsuite.com ' +
+    '(a sandbox looks like 1234567_SB1). Everything else is found automatically. You can also enter it later.');
+  InfoPage.Add('Account ID:', False);
+  LicencePage := CreateInputFilePage(InfoPage.ID, 'Licence (optional)', 'Usually nothing to do here.',
+    'Leave this empty: the licence comes from NetSuite at your first sign-in, once your administrator has added it. ' +
+    'Only the first person to install (the administrator) chooses the licence file from Techno Q here.');
   LicencePage.Add('Licence file:', 'Licence files (*.json)|*.json|All files|*.*', '.json');
+  // For a silent rollout: TQConnectorSetup.exe /VERYSILENT /ACCOUNT=1234567 [/LICENCE="C:\path\licence.json"]
+  InfoPage.Values[0] := ExpandConstant('{param:ACCOUNT|}');
+  LicencePage.Values[0] := ExpandConstant('{param:LICENCE|}');
 end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;
@@ -119,10 +121,12 @@ var
 begin
   Result := True;
   if CurPageID = InfoPage.ID then begin
-    Url := Lowercase(Trim(InfoPage.Values[1]));
-    if (Url <> '') and ((Pos('https://', Url) <> 1) or (Pos('.restlets.api.netsuite.com', Url) = 0)) then begin
-      MsgBox('The RESTlet URL should look like https://1234567.restlets.api.netsuite.com/app/site/hosting/restlet.nl?script=...', mbError, MB_OK);
-      Result := False;
+    Url := Lowercase(Trim(InfoPage.Values[0]));
+    StringChangeEx(Url, 'https://', '', True);
+    if Pos('.', Url) > 0 then begin   // a pasted address: keep the account part
+      Url := Copy(Url, 1, Pos('.', Url) - 1);
+      StringChangeEx(Url, '-', '_', True);
+      InfoPage.Values[0] := Uppercase(Url);
     end;
   end;
 end;
@@ -139,9 +143,7 @@ begin
     if FileExists(PreparedSettings()) then
       FileCopy(PreparedSettings(), Config, False)
     else if Trim(InfoPage.Values[0]) <> '' then
-      SaveStringToFile(Config, '{"accountId": "' + JsonText(InfoPage.Values[0]) + '", "restletUrl": "' +
-        JsonText(InfoPage.Values[1]) + '", "clientId": "' + JsonText(InfoPage.Values[2]) +
-        '", "fiscalYearStartMonth": 1}', False);
+      SaveStringToFile(Config, '{"accountId": "' + JsonText(InfoPage.Values[0]) + '"}', False);   // the rest is found automatically
   end;
   Licence := Data + '\licence.json';
   if not FileExists(Licence) then begin

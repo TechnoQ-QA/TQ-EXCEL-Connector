@@ -46,7 +46,7 @@ import ledger as ledger_module  # noqa: E402
 import licence as licence_module  # noqa: E402
 import tqcrypto  # noqa: E402
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 FROZEN = bool(getattr(sys, "frozen", False))   # running as the installed TQConnector.exe
 if FROZEN:
     ROOT = os.path.dirname(os.path.abspath(sys.executable))
@@ -65,6 +65,12 @@ else:
     CERT_PATH = os.path.join(ROOT, "certs", "localhost.crt")
     KEY_PATH = os.path.join(ROOT, "certs", "localhost.key")
 SECRET_KEYS = ("consumerSecret", "tokenSecret")
+# Techno Q's sign-in integration (account 12253116): a public OAuth 2.0 client, the same for every customer, so a
+# customer creates no integration record of their own. NetSuite installs it in their account at the first sign-in
+# (or with the TQ bundle). A config "clientId" overrides it.
+DEFAULT_CLIENT_ID = "028fcb4fe8898afd0320c2e02e742d1c5aa2757439ac57f210cce5633ab1b34f"
+# The TQ RESTlet answers at an address made from the account ID and its script IDs, so nobody copies it.
+RESTLET_PATH = "/app/site/hosting/restlet.nl?script=customscript_tq_excel_restlet&deploy=customdeploy_tq_excel_restlet"
 
 MAX_BODY = 8 * 1024 * 1024   # a chat message may carry a screenshot
 RESTLET_HOST_SUFFIX = ".restlets.api.netsuite.com"
@@ -116,11 +122,22 @@ def load_config(path=CONFIG_PATH):
     return check_config(cfg)
 
 
+def restlet_url(account):
+    """https://1234567-sb1.restlets.api.netsuite.com/... for account 1234567_SB1."""
+    return "https://%s%s%s" % (str(account).strip().lower().replace("_", "-"), RESTLET_HOST_SUFFIX, RESTLET_PATH)
+
+
 def check_config(cfg):
     """Raises ValueError for a config that cannot work; returns it tidied."""
     if not isinstance(cfg, dict):
         raise ValueError("config.json must hold one JSON object")
-    # Either "Sign in with NetSuite" (OAuth 2.0: a client ID) or token-based authentication (four keys)
+    # Either "Sign in with NetSuite" (OAuth 2.0: Techno Q's client ID unless another is given) or token-based
+    # authentication (four keys). With only an account ID, it is Sign in with NetSuite.
+    tba = all(str(cfg.get(k, "")).strip() for k in SECRET_KEYS) and not str(cfg.get("clientId", "")).strip()
+    if not tba and not str(cfg.get("clientId", "")).strip():
+        cfg["clientId"] = DEFAULT_CLIENT_ID
+    if str(cfg.get("accountId", "")).strip() and not str(cfg.get("restletUrl", "")).strip():
+        cfg["restletUrl"] = restlet_url(cfg["accountId"])
     oauth2 = bool(str(cfg.get("clientId", "")).strip())
     needed = ("accountId", "restletUrl") if oauth2 else CONFIG_KEYS
     missing = [k for k in needed if not str(cfg.get(k, "")).strip()]
@@ -420,6 +437,11 @@ class MockBackend:
                     {"key": "u1", "label": "PC-1", "user": "Sample User", "last": "2026-11-18", "mine": True}]}
             if action == "seatRelease":
                 return {"ok": True, "canRelease": True, "days": 30, "seats": []}
+            if action == "licenceGet":
+                return {"ok": True, "licence": self.__dict__.get("licence_text", "")}
+            if action == "licenceSave":
+                self.licence_text = _text(payload.get("licence"))
+                return {"ok": True, "saved": True}
             if action in ("libraryList", "librarySave", "libraryLoad", "libraryDelete"):
                 return dict(ok=True, **self._library(action, payload))
             if action == "budgetInfo":
@@ -583,6 +605,8 @@ class Handler(SimpleHTTPRequestHandler):
         session.remember_user(who.get("user"), who.get("role"))
         if getattr(type(self), "seats", None) is not None:
             type(self).seats.checked = 0   # a new person: their own seat is checked on the next request
+        if not fetch_licence(type(self), force=True):   # a new PC: the licence comes from NetSuite, nobody copies a file
+            share_licence(type(self))                   # ... or this PC has it and NetSuite does not yet
         return self._page(200, "Signed in to NetSuite", "Signed in as %s. You can close this tab and go back to Excel."
                           % (who.get("user") or "you"))
 
@@ -597,6 +621,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path = urllib.parse.urlsplit(self.path).path
         if path == "/api/status":
+            fetch_licence(type(self))
             return self._json(200, {"ok": True, "mode": self.mode, "chat": type(self).chat.available(),
                                     "ai": bool(type(self).chat.assistant), "version": VERSION,
                                     "licence": type(self).licence, "configured": self.mode == "netsuite",
@@ -709,6 +734,8 @@ def configure(handler, cfg, today=None, licence_text=None):
         handler.session = signin_module.Session(cfg, os.path.dirname(handler.licence_path))
         cfg["_session"] = handler.session
     raw = functools.partial(call_netsuite, cfg) if cfg else MockBackend().handle
+    handler.netsuite = raw   # unchecked: for the connection test and fetching the licence
+    handler.config = cfg
     handler.mode = "netsuite" if cfg else "sample"
     handler.account = cfg["accountId"] if cfg else ""
     handler.today = today
@@ -723,8 +750,8 @@ def configure(handler, cfg, today=None, licence_text=None):
         if not handler.licence["ok"]:
             netsuite, message = raw, handler.licence["message"]
 
-            def raw(payload):  # noqa: F811 - only the connection test passes without a licence
-                if payload.get("action") == "ping":
+            def raw(payload):  # noqa: F811 - only the connection test and the licence pass without a licence
+                if payload.get("action") in ("ping", "licenceGet", "licenceSave"):
                     return netsuite(payload)
                 return {"ok": False, "error": "Licence: " + message}
     handler.seats = None
@@ -738,6 +765,8 @@ def configure(handler, cfg, today=None, licence_text=None):
         fiscal_start = 1
     # The ledger adds totals (type:..., calc:...) on top of NetSuite's single-account balances.
     ledger = ledger_module.Ledger(raw, fiscal_start_month=fiscal_start, today=today)
+    if cfg and not str(cfg.get("fiscalYearStartMonth") or "").strip() and handler.licence and handler.licence.get("ok"):
+        threading.Thread(target=_detect_fiscal_start, args=(raw, ledger), daemon=True).start()
     if cfg:   # drill-down rows link to the record: https://65987-sb1.app.netsuite.com/app/accounting/...
         ledger.record_url = "https://%s.app.netsuite.com/app/accounting/transactions/transaction.nl?id=" % \
             cfg["accountId"].lower().replace("_", "-")
@@ -746,6 +775,63 @@ def configure(handler, cfg, today=None, licence_text=None):
     ai = (cfg or {}).get("ai") if isinstance((cfg or {}).get("ai"), dict) else {}
     if str(ai.get("apiKey") or "").strip():  # the optional AI add-on, with the customer's own key
         handler.chat.assistant = assistant_module.Assistant(ai, chat_module.HELP_TEXT)
+
+
+def _detect_fiscal_start(netsuite, ledger):
+    """No fiscal year start in the settings: take it from NetSuite's fiscal year periods (TQ script 8)."""
+    try:
+        month = int((netsuite({"action": "setup"}) or {}).get("fiscalStartMonth") or 0)
+    except (TypeError, ValueError, OSError, KeyError):
+        return
+    if 1 <= month <= 12 and month != ledger.fiscal_start_month:
+        ledger.fiscal_start_month = month
+        with ledger._lock:
+            ledger._cache.clear()
+
+
+def fetch_licence(handler, force=False):
+    """No valid licence on this PC: ask NetSuite for the one an administrator stored there (tq_licence.json) and,
+    when it is valid for this account, keep it in data\\licence.json and reconnect. At most once a minute."""
+    if handler.mode != "netsuite" or (handler.licence or {}).get("ok"):
+        return False
+    now = time.time()
+    if not force and now - getattr(handler, "_licence_tried", 0) < 60:
+        return False
+    handler._licence_tried = now
+    session = getattr(handler, "session", None)
+    if session is not None and not session.info().get("signedIn"):
+        return False
+    try:
+        answer = handler.netsuite({"action": "licenceGet"})
+        text = str((answer or {}).get("licence") or "").strip() if answer.get("ok") else ""
+        if not text:
+            return False
+        found = licence_module.parse(text)
+        if not licence_module.check(found, handler.config["accountId"], handler.today)["ok"]:
+            return False
+    except (ValueError, KeyError, TypeError, OSError):
+        return False
+    os.makedirs(os.path.dirname(handler.licence_path), exist_ok=True)
+    with open(handler.licence_path, "w", encoding="utf-8") as f:
+        json.dump(found, f, indent=1)
+    configure(handler, handler.config, handler.today)
+    print("Licence received from NetSuite: %s" % handler.licence.get("message", ""))
+    return True
+
+
+def share_licence(handler):
+    """This PC has a valid licence and NetSuite has none: store it there (works when an administrator signs in), so
+    the other users' PCs get it at their first sign-in."""
+    if handler.mode != "netsuite" or not (handler.licence or {}).get("ok"):
+        return False
+    try:
+        with open(handler.licence_path, encoding="utf-8") as f:
+            text = f.read()
+        if str((handler.netsuite({"action": "licenceGet"}) or {}).get("licence") or "").strip():
+            return False
+        return bool(handler.netsuite({"action": "licenceSave", "licence": text}).get("ok"))
+    except (OSError, ValueError, KeyError, AttributeError):
+        return False
 
 
 def _saved_config(path):
@@ -935,12 +1021,20 @@ def save_setup(handler, payload):
         with open(handler.licence_path, "w", encoding="utf-8") as f:
             json.dump(found, f, indent=1)
     configure(handler, checked, handler.today)
+    shared = ""
+    if found:   # stored in NetSuite too, so every other PC gets it at its first sign-in (administrators only)
+        try:
+            answer = handler.netsuite({"action": "licenceSave", "licence": text})
+            shared = "stored in NetSuite for every user" if answer.get("ok") else                 "kept on this PC only (%s)" % (answer.get("error") or "NetSuite did not take it")
+        except (OSError, ValueError, KeyError):
+            shared = "kept on this PC only (sign in as an administrator to share it)"
     if handler.session is not None and not handler.session.info()["signedIn"]:
-        return {"ok": True, "connected": False, "signIn": True, "licence": handler.licence,
+        return {"ok": True, "connected": False, "signIn": True, "licence": handler.licence, "licenceShared": shared,
                 "error": "Saved. Now sign in with NetSuite (the button below, or Sign in in the panel)."}
     ping = handler.backend({"action": "ping"})
     return {"ok": True, "connected": bool(ping.get("ok")), "error": ping.get("error", ""),
-            "user": ping.get("user", ""), "licence": handler.licence, "signIn": bool(ping.get("signIn"))}
+            "user": ping.get("user", ""), "licence": handler.licence, "signIn": bool(ping.get("signIn")),
+            "licenceShared": shared}
 
 
 def make_certificate(cert_path=CERT_PATH, key_path=KEY_PATH):
