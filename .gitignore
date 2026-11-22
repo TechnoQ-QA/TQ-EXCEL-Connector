@@ -11,3 +11,4 @@ data/
 *.key
 .claude/
 server/prefs.json
+licence-*.json

@@ -1453,8 +1453,41 @@ class InstallTest(unittest.TestCase):
             self.assertIn("licenceSave", calls)
             self.assertTrue(stored["licence"])
             calls.clear()
-            server.fetch_licence(handler)                                   # once per run
+            server.fetch_licence(handler)                                   # not again before the 6-hour check
             self.assertEqual(calls, [])
+        finally:
+            server.call_netsuite = saved
+
+    def test_a_renewed_licence_in_netsuite_reaches_a_licensed_pc(self):
+        """The administrator pastes a renewal (more users): a PC that still has a valid old licence takes it."""
+        cfg = server.check_config(dict(CFG, accountId="1234567_SB1"))
+        old = self.licence()
+        newer = json.dumps(server.licence_module.make(self.key, "World of Hospitality", "1234567_sb1", 10, "2028-12-31",
+                                                      today=TODAY + datetime.timedelta(days=1)))
+        stored = {"licence": old}
+        saved = server.call_netsuite
+
+        def netsuite(cfg, payload):
+            if payload["action"] == "licenceGet":
+                return {"ok": True, "licence": stored["licence"]}
+            return {"ok": True, "allowed": True, "used": 1, "users": 5}
+        server.call_netsuite = netsuite
+        try:
+            handler = type("H", (server.Handler,), {"config_path": os.path.join(self.folder, "config.json"),
+                                                   "licence_path": os.path.join(self.folder, "licence.json")})
+            with open(handler.licence_path, "w", encoding="utf-8") as f:
+                f.write(old)
+            server.configure(handler, cfg, TODAY, licence_text=old)
+            self.assertFalse(server.fetch_licence(handler, force=True))      # same licence: nothing changes
+            stored["licence"] = newer
+            self.assertFalse(server.fetch_licence(handler))                  # not before the 6-hour check
+            self.assertTrue(server.fetch_licence(handler, force=True))
+            self.assertEqual(handler.licence["users"], 10)
+            with open(handler.licence_path, encoding="utf-8") as f:
+                self.assertEqual(json.load(f)["users"], 10)
+            stored["licence"] = old                                           # an older one never replaces it
+            self.assertFalse(server.fetch_licence(handler, force=True))
+            self.assertEqual(handler.licence["users"], 10)
         finally:
             server.call_netsuite = saved
 

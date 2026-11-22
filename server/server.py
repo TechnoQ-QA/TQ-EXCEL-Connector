@@ -797,12 +797,14 @@ def fetch_licence(handler, force=False):
     session = getattr(handler, "session", None)
     signed_in = session is None or bool(session.info().get("signedIn"))
     if (handler.licence or {}).get("ok"):
-        # Licensed here: make sure NetSuite has it too, once per run, so a PC that was signed in before 1.5 (and so
-        # never went through the sign-in that shares it) still stores it. Only an administrator's attempt succeeds.
-        if signed_in and not getattr(handler, "_licence_shared", False):
-            handler._licence_shared = True
-            if share_licence(handler):
-                print("Licence stored in NetSuite for the other users.")
+        # Licensed here: compare with NetSuite's copy when the connector starts and then every 6 hours. NetSuite has
+        # none -> store ours (a PC signed in before 1.5 never shared it; only an administrator's attempt succeeds).
+        # NetSuite has a newer one (renewal, more users) -> take it, so a renewal reaches every PC without waiting
+        # for the old licence to expire.
+        now = time.time()
+        if signed_in and (force or now - getattr(handler, "_licence_synced", 0) >= LICENCE_RESYNC):
+            handler._licence_synced = now
+            return sync_licence(handler)
         return False
     now = time.time()
     if not force and now - getattr(handler, "_licence_tried", 0) < 60:
@@ -825,6 +827,41 @@ def fetch_licence(handler, force=False):
         json.dump(found, f, indent=1)
     configure(handler, handler.config, handler.today)
     print("Licence received from NetSuite: %s" % handler.licence.get("message", ""))
+    return True
+
+
+LICENCE_RESYNC = 6 * 3600   # seconds between comparisons of this PC's licence with NetSuite's
+
+
+def _licence_order(found):
+    """Which of two licences is newer: the later issue date, then the later expiry."""
+    return (str((found or {}).get("issued") or ""), str((found or {}).get("expires") or ""))
+
+
+def sync_licence(handler):
+    """This PC is licensed: store the licence in NetSuite if it has none, or take NetSuite's if it is newer and valid.
+    Returns True when this PC's licence changed."""
+    try:
+        answer = handler.netsuite({"action": "licenceGet"}) or {}
+        if not answer.get("ok"):
+            return False
+        text = str(answer.get("licence") or "").strip()
+        if not text:
+            if share_licence(handler):
+                print("Licence stored in NetSuite for the other users.")
+            return False
+        found = licence_module.parse(text)
+        mine = licence_module.read(handler.licence_path)
+        if _licence_order(found) <= _licence_order(mine):
+            return False
+        if not licence_module.check(found, handler.config["accountId"], handler.today)["ok"]:
+            return False
+    except (ValueError, KeyError, TypeError, OSError, AttributeError):
+        return False
+    with open(handler.licence_path, "w", encoding="utf-8") as f:
+        json.dump(found, f, indent=1)
+    configure(handler, handler.config, handler.today)
+    print("Newer licence received from NetSuite: %s" % handler.licence.get("message", ""))
     return True
 
 

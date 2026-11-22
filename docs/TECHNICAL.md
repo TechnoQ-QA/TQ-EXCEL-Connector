@@ -13,7 +13,7 @@ guide.
 | NetSuite bundle (what customers install) | **715956** "TQ Excel Connector", in Techno Q's account 12253116 |
 | Sign-in integration (shared by every customer) | "TQ Excel Connector" in 12253116, Client ID `028fcb4f...b34f` (`DEFAULT_CLIENT_ID`) |
 | Source | private GitHub repository `TechnoQ-QA/TQ-EXCEL-Connector`, branch `main` |
-| Tests | 92 (`python -m unittest discover -s tests`) |
+| Tests | 94 (`python -m unittest discover -s tests`) |
 
 ---
 
@@ -146,7 +146,7 @@ works for accounts not moved yet. NetSuite retires TBA by 2027.
 | `netsuite/sdf/` | The SuiteCloud package: copies of the scripts plus object XML (script records, deployments, role) |
 | `installer/` | Inno Setup script, build script, signing script, Techno Q's public certificate, legacy PowerShell installer |
 | `scripts/` | Techno Q tools: licences, update signing, NetSuite package, icons, connection check, developer setup |
-| `tests/` | `test_server.py`: 90 tests (server, reports, layouts, templates, sign-in, seats, updates, package, care) |
+| `tests/` | `test_server.py`: 94 tests (server, reports, layouts, templates, sign-in, seats, updates, package, care) |
 | `docs/` | This document, the client IT install note, the panel mockup |
 | `build/` | Build output (not in Git): venv, PyInstaller output, staged app, setup file, checksum, certificate |
 
@@ -297,7 +297,7 @@ Nothing is copied by hand any more:
 | Integration record per customer, Client ID copied to every PC | One integration owned by Techno Q (12253116), public client, built into the connector as `DEFAULT_CLIENT_ID`. NetSuite installs it in the customer's account at the first sign-in (proven against 65987_SB1), and the bundle carries it too. `clientId` in `config.json` still overrides it. |
 | RESTlet External URL copied | `restlet_url(account)`: `https://<account, lower case, _ as ->.restlets.api.netsuite.com/app/site/hosting/restlet.nl?script=customscript_tq_excel_restlet&deploy=customdeploy_tq_excel_restlet` (script IDs work in place of numbers) |
 | Fiscal year start typed | The `setup` action returns `fiscalStartMonth` (start month of the latest accounting period with `isyear='T'`); the connector reads it in the background when `fiscalYearStartMonth` is not set |
-| `licence.json` copied to every PC | Stored once in NetSuite (`tq_licence.json`, 4.5). Actions `licenceGet` (any user) and `licenceSave` (administrator only). The connector asks for it after sign-in and on status checks (at most once a minute), verifies signature and account, and writes `data\licence.json`. A licence chosen in the installer or pasted on the setup page is pushed to NetSuite when the user is an administrator. |
+| `licence.json` copied to every PC | Stored once in NetSuite (`tq_licence.json`, 4.5). Actions `licenceGet` (any user) and `licenceSave` (administrator only). The connector asks for it after sign-in and on status checks (at most once a minute), verifies signature and account, and writes `data\licence.json`. A licence chosen in the installer or pasted on the setup page is pushed to NetSuite when the user is an administrator. A PC that is already licensed compares its copy with NetSuite's at start-up and every 6 hours: it stores its own when NetSuite has none, and takes NetSuite's when that one is newer (later `issued`, then later `expires`), so a renewal reaches every PC within 6 hours. |
 
 Integration settings (12253116): Authorization Code Grant, Public Client, scope RESTlets, redirect
 `https://localhost:3000/oauth/callback`, refresh token validity and rotation 720 hours. Its client secret is not used
@@ -578,6 +578,32 @@ POST (JSON only):
 - Without a valid licence only the connection test reaches NetSuite. Sample data needs no licence.
 - `users` is enforced by seats (6.9).
 
+**Making a licence (Techno Q only).** Licences are made on the Techno Q PC that holds the private key
+(`%USERPROFILE%\TQ Licence Key\private-key.json`), with Python 3 and the project folder. Customers never run this.
+
+1. Get from the customer: the company name to show, the NetSuite account ID (Setup > Company > Company
+   Information > Account ID, e.g. `1234567`; a sandbox is `1234567_SB1`), the number of users and the last day
+   of their subscription.
+2. Open PowerShell in the project folder and run the command below. One licence fits one account: make a second
+   one for the sandbox if they use it.
+3. The script signs the licence, checks it against the connector's public key (`server/licence_key.py`) and writes
+   `licence-<account>.json` in the project folder. Do not edit the file: any change breaks the signature. Do not
+   commit it.
+4. Send the file to the customer's administrator. They choose it on the setup's Licence page (or paste it later on
+   Setup > Licence) and sign in; it is then stored in NetSuite and every other PC gets it at sign-in.
+
+```powershell
+cd C:\Users\<you>\Desktop\Development\netsuite-excel-connector
+python scripts\make_licence.py --customer "Customer name" --account 1234567 --users 5 --expires 2027-12-31
+```
+
+- `--users` defaults to 5; `--out <file>` writes somewhere else. The issue date is today.
+- **Renewal or more users:** run it again with the same account and the new users or date, and send the new
+  file. The administrator pastes it on Setup > Licence; it replaces NetSuite's copy at once, and every other PC
+  takes it within 6 hours (or at its next start).
+- **Lost key:** without `private-key.json` no new licence can be made (and no update signed). `--new-key` makes
+  a new pair but every licence already issued stops working, so keep an offline copy of the key file.
+
 ### 6.9 Seats
 
 - With sign-in, a seat belongs to the **NetSuite user** (key `u<employee id>`), whichever PC they use. With TBA it
@@ -704,7 +730,7 @@ trust, add-in registration) to run the connector from source.
 ```
 python server/server.py --http --mock --port 3010     # browser preview with sample data
 python server/server.py                               # HTTPS on 3000 with server/config.json (needs setup-excel.ps1 once)
-python -m unittest discover -s tests                  # 90 tests
+python -m unittest discover -s tests                  # 94 tests
 python scripts/check_netsuite.py --period "Oct 2026"  # connection check; prints balances, never credentials
 python scripts/make_icons.py                          # regenerate icons
 ```

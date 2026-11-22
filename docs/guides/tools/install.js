@@ -169,7 +169,7 @@ const body = [
     ['New user', 'Add the TQ Excel User role, run the setup on their PC, sign in.'],
     ['New or replaced PC', 'Run the setup and sign in. To take a user’s filter sets and layouts along: panel gear menu > **Move to another PC** > Export, then Import on the new PC.'],
     ['Seats', 'Setup > **Seats** shows who uses the licence. A seat frees itself after 30 days unused; an administrator can release one at once.'],
-    ['Licence renewal', 'Techno Q sends a new licence.json: the administrator pastes it on Setup > Licence. Every PC picks it up.'],
+    ['Licence renewal', 'Techno Q sends a new licence.json: the administrator pastes it on Setup > Licence. NetSuite’s copy is replaced at once; every other PC takes it within 6 hours.'],
     ['NetSuite script update', 'Techno Q pushes it through the bundle; nothing to do. The panel says if NetSuite’s script is older than the add-in needs.'],
     ['Connector update', 'Run the new setup file, or accept the update the panel offers. Settings, licence and sign-in are kept.'],
     ['Sandbox refresh', 'Install bundle ' + BUNDLE + ' in the sandbox again if it is missing after the refresh.'],
