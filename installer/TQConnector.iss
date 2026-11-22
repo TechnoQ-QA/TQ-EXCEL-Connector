@@ -43,6 +43,8 @@ SolidCompression=yes
 WizardStyle=modern
 CloseApplications=no
 RestartApplications=no
+; a log in %TEMP% ("Setup Log <date>.txt"): which file failed, and why, if a setup ever reports an error
+SetupLogging=yes
 #ifdef SignTool
 SignTool={#SignTool}
 SignedUninstaller=yes
@@ -159,12 +161,48 @@ begin
   Result := ExpandConstant('{app}\data\certs\localhost.crt');
 end;
 
-procedure StopConnector();
+// True while any TQConnector.exe process is still running (it holds its exe and DLLs, so they cannot be replaced).
+function ConnectorRunning(): Boolean;
 var
   Code: Integer;
 begin
+  Result := Exec(ExpandConstant('{cmd}'), '/C tasklist /FI "IMAGENAME eq TQConnector.exe" /NH | find /I "TQConnector.exe" >NUL',
+                 '', SW_HIDE, ewWaitUntilTerminated, Code) and (Code = 0);
+end;
+
+// After the stop: wait up to 15 seconds for the processes to end, so copying the new version never meets
+// "Access is denied". Only a process that is still there after that is closed by force.
+procedure WaitForFilesFree();
+var
+  I, Code: Integer;
+begin
+  for I := 1 to 30 do begin
+    if not ConnectorRunning() then
+      exit;
+    Sleep(500);
+  end;
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM TQConnector.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
-  Sleep(700);
+  for I := 1 to 10 do begin
+    if not ConnectorRunning() then
+      exit;
+    Sleep(500);
+  end;
+end;
+
+// Ask the running connector to stop ("--stop", since 1.5.1) instead of force-killing it: antivirus reads a
+// setup that kills processes as malware. Only a connector older than 1.5.1 (it does not know --stop) or one that
+// does not answer the request is still closed with taskkill.
+procedure StopConnector();
+var
+  Code: Integer;
+  Exe: String;
+begin
+  Exe := ExpandConstant('{app}\TQConnector.exe');
+  if not FileExists(Exe) then
+    exit;
+  if not (Exec(Exe, '--stop', ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, Code) and (Code = 0)) then
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM TQConnector.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  WaitForFilesFree();
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -175,7 +213,8 @@ begin
   DelTree(ExpandConstant('{app}\_internal'), True, True, True);
   DelTree(ExpandConstant('{app}\addin'), True, True, True);
   // the uninstall entry of the earlier, script-based installer: this one has its own
-  RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\TQConnector');
+  if RegKeyExists(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\TQConnector') then
+    RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\TQConnector');
   Result := '';
 end;
 

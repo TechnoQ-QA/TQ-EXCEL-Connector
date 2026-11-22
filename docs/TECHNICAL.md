@@ -6,14 +6,14 @@ guide.
 
 | Part | Version (Nov 2026) |
 |---|---|
-| Connector (TQConnector.exe, `server/server.py` `VERSION`) | 1.5.0 |
-| Excel add-in (`addin/manifest.xml` `<Version>`) | 1.5.0.0 |
+| Connector (TQConnector.exe, `server/server.py` `VERSION`) | 1.5.1 |
+| Excel add-in (`addin/manifest.xml` `<Version>`) | 1.5.1.0 |
 | NetSuite script (`netsuite/tq_excel_core.js` `VERSION`) | 8 |
 | NetSuite package (SuiteCloud SDF project, `netsuite/sdf`) | deployed to Techno Q 12253116 and the sandbox 65987_SB1 |
 | NetSuite bundle (what customers install) | **715956** "TQ Excel Connector", in Techno Q's account 12253116 |
 | Sign-in integration (shared by every customer) | "TQ Excel Connector" in 12253116, Client ID `028fcb4f...b34f` (`DEFAULT_CLIENT_ID`) |
 | Source | private GitHub repository `TechnoQ-QA/TQ-EXCEL-Connector`, branch `main` |
-| Tests | 94 (`python -m unittest discover -s tests`) |
+| Tests | 96 (`python -m unittest discover -s tests`) |
 
 ---
 
@@ -146,7 +146,7 @@ works for accounts not moved yet. NetSuite retires TBA by 2027.
 | `netsuite/sdf/` | The SuiteCloud package: copies of the scripts plus object XML (script records, deployments, role) |
 | `installer/` | Inno Setup script, build script, signing script, Techno Q's public certificate, legacy PowerShell installer |
 | `scripts/` | Techno Q tools: licences, update signing, NetSuite package, icons, connection check, developer setup |
-| `tests/` | `test_server.py`: 94 tests (server, reports, layouts, templates, sign-in, seats, updates, package, care) |
+| `tests/` | `test_server.py`: 96 tests (server, reports, layouts, templates, sign-in, seats, updates, package, care) |
 | `docs/` | This document, the client IT install note, the panel mockup |
 | `build/` | Build output (not in Git): venv, PyInstaller output, staged app, setup file, checksum, certificate |
 
@@ -486,6 +486,7 @@ The installer and updates keep this folder; uninstall keeps it too.
 | `--mock` | Sample data, even with a config |
 | `--http` | Plain HTTP (browser preview only; Excel needs HTTPS) |
 | `--make-cert` | Make this PC's certificate and stop (used by the installer) |
+| `--stop` | Ask the running connector and its watcher to stop: writes `data\stop`, which both check (every 0.5 s / when the child ends), waits until port 3000 no longer answers, removes the file. Exit 0 = stopped or not running, 1 = still answering after 15 s. Used by the installer since 1.5.1 |
 
 ### 6.4 HTTP endpoints
 
@@ -681,10 +682,11 @@ Chat, Keyboard shortcuts, Move to another PC. Header: logo, account and user, he
 | Install | Per user, no administrator rights; `%LOCALAPPDATA%\TQ Connector` |
 | Pages (first install only) | Welcome; **Connect to NetSuite** (account ID only; a pasted NetSuite address is reduced to the account); **Licence** (optional file, for the administrator's PC); skipped when a config exists or `TQConnector.settings.json` sits next to the setup file |
 | Prepared roll-out | `TQConnector.settings.json` (a prepared config.json) and `licence.json` next to the setup file are copied in; no typing |
-| Before copying | Stops every TQConnector.exe; deletes the old program files (not `data\`); removes the old script installer's uninstall entry |
+| Before copying | Stops the connector politely (`TQConnector.exe --stop`); then waits (up to 15 s) until no TQConnector.exe process is left, so no file is "in use" when it is replaced; only a connector older than 1.5.1, or a process still there after the wait, is closed with `taskkill /F` (antivirus behaviour monitors read a setup that kills processes as malware). A connector stopped this way ends its process at once (`os._exit`), since background threads would otherwise keep the exe and DLLs open; deletes the old program files (not `data\`); removes the old script installer's uninstall entry if it exists |
 | Registry | `HKCU\Software\Microsoft\Office\16.0\WEF\Developer\6f1c2a9e-...` = `{app}\addin\manifest.xml` (removed on uninstall) |
 | Shortcuts | Startup and Start menu "TQ Connector" -> `TQConnector.exe --watch` |
 | After copying | Saves the entered settings; makes the certificate (`--make-cert`) if missing; trusts it (`certutil -user -addstore Root`, Windows asks); starts `--watch`; first install offers to open the setup page |
+| Setup log | `%TEMP%\Setup Log <date> #NNN.txt` (`SetupLogging=yes`): which file failed and why |
 | Uninstall | Stops the connector, removes the add-in registration, shortcuts, program files, and exactly this PC's certificate (by thumbprint); keeps `data\` |
 | Silent | `TQConnectorSetup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /ACCOUNT=1234567 [/LICENCE="path"]` (must run as the user, not SYSTEM) |
 
@@ -730,7 +732,7 @@ trust, add-in registration) to run the connector from source.
 ```
 python server/server.py --http --mock --port 3010     # browser preview with sample data
 python server/server.py                               # HTTPS on 3000 with server/config.json (needs setup-excel.ps1 once)
-python -m unittest discover -s tests                  # 94 tests
+python -m unittest discover -s tests                  # 96 tests
 python scripts/check_netsuite.py --period "Oct 2026"  # connection check; prints balances, never credentials
 python scripts/make_icons.py                          # regenerate icons
 ```

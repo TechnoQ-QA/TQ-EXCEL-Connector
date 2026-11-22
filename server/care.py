@@ -54,14 +54,71 @@ def _answering(port):
         return False
 
 
-def watch(argv, frozen, script, port=3000):
+# A polite stop for the setup (instead of force-killing the process, which antivirus reads as malware):
+# "TQConnector.exe --stop" writes data\stop; the connector shuts down within a second and the watcher does not
+# start it again. The file is removed once the connector has gone.
+
+def stop_path(data_dir):
+    return os.path.join(data_dir, "stop")
+
+
+def stop_requested(data_dir):
+    return os.path.exists(stop_path(data_dir))
+
+
+def clear_stop(data_dir):
+    """At start-up: a stop file left behind (a setup that was cut off) must not stop this new start."""
+    try:
+        os.remove(stop_path(data_dir))
+    except OSError:
+        pass
+
+
+def watch_stop(data_dir, shutdown, every=0.5):
+    """Background thread in the connector: calls shutdown() when the stop file appears."""
+    def loop():
+        while not stop_requested(data_dir):
+            time.sleep(every)
+        _log("Stop requested (by the setup): shutting down.")
+        shutdown()
+    threading.Thread(target=loop, daemon=True).start()
+
+
+def request_stop(data_dir, port=3000, timeout=15, answering=None):
+    """--stop: ask the running connector (and its watcher) to stop, wait until it no longer answers.
+    Returns 0 when it has stopped (or was not running), 1 when it still answers after the timeout."""
+    answering = answering or _answering
+    if not answering(port):
+        return 0
+    os.makedirs(data_dir, exist_ok=True)
+    with open(stop_path(data_dir), "w", encoding="utf-8") as f:
+        f.write("stop")
+    end = time.time() + timeout
+    try:
+        while time.time() < end:
+            if not answering(port):
+                time.sleep(1.5)   # the watcher sees the file and ends too
+                return 0
+            time.sleep(0.5)
+        return 1
+    finally:
+        clear_stop(data_dir)
+
+
+def watch(argv, frozen, script, port=3000, data_dir=None):
     """Runs the connector as a child process and starts it again whenever it stops. A child that stops at
-    once (another copy has the port, a broken setting) is retried less and less often, up to once a minute."""
+    once (another copy has the port, a broken setting) is retried less and less often, up to once a minute.
+    Ends when the setup asks for a stop (the stop file in the data folder)."""
     child_args = [a for a in argv if a != "--watch"]
     cmd = [sys.executable] + ([] if frozen else [script]) + child_args
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     wait = 3
+    if data_dir:
+        clear_stop(data_dir)
     while True:
+        if data_dir and stop_requested(data_dir):
+            _log("Stop requested (by the setup): the watcher ends.")
+            return
         if _answering(port):
             time.sleep(60)      # someone else's copy is serving: check again later
             continue
@@ -71,6 +128,9 @@ def watch(argv, frozen, script, port=3000):
             code = child.wait()
         except OSError as err:
             code = "could not start: %s" % err
+        if data_dir and stop_requested(data_dir):
+            _log("Connector stopped for the setup; the watcher ends.")
+            return
         ran = time.time() - started
         wait = 3 if ran > 60 else min(60, wait * 2)
         _log("Connector stopped (%s) after %d s; starting it again in %d s." % (code, ran, wait))

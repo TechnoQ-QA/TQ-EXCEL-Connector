@@ -157,6 +157,46 @@ class CareTest(unittest.TestCase):
         self.assertEqual(len(prefs.handle({"op": "get"})["filterSets"]), 1)
         self.assertEqual(prefs.handle({"op": "removeSet", "name": "Riyadh Hotels"})["filterSets"], [])
 
+    def test_polite_stop_for_the_setup(self):
+        """--stop writes the stop file, the connector's thread shuts down, the file is removed afterwards."""
+        import threading as _t
+        stopped = _t.Event()
+        self.care.watch_stop(self.dir, stopped.set, every=0.05)
+        running = {"on": True}
+
+        def answering(port):
+            if stopped.is_set():
+                running["on"] = False
+            return running["on"]
+        saved_sleep = self.care.time.sleep
+        self.care.time.sleep = lambda s: saved_sleep(min(s, 0.05))
+        try:
+            self.assertEqual(self.care.request_stop(self.dir, answering=answering, timeout=5), 0)
+            self.assertTrue(stopped.is_set())
+            self.assertFalse(self.care.stop_requested(self.dir))                  # removed once it has gone
+            self.assertEqual(self.care.request_stop(self.dir, answering=lambda p: False), 0)   # not running
+            self.assertEqual(self.care.request_stop(self.dir, answering=lambda p: True, timeout=0.2), 1)
+            self.assertFalse(self.care.stop_requested(self.dir))                  # never left behind
+        finally:
+            self.care.time.sleep = saved_sleep
+
+    def test_watcher_ends_on_a_stop_and_ignores_a_stale_one(self):
+        open(self.care.stop_path(self.dir), "w").close()
+        self.care.clear_stop(self.dir)                                           # a new start clears a leftover
+        self.assertFalse(self.care.stop_requested(self.dir))
+        saved = self.care._answering, self.care.subprocess.Popen
+
+        class Child:
+            def __init__(me, *a, **k):
+                open(self.care.stop_path(self.dir), "w").close()              # the setup asks while it runs
+            def wait(me):
+                return 0
+        self.care._answering, self.care.subprocess.Popen = (lambda port: False), Child
+        try:
+            self.care.watch(["--watch"], True, "x", 3000, self.dir)               # returns instead of restarting
+        finally:
+            self.care._answering, self.care.subprocess.Popen = saved
+
     def test_secrets_never_leave(self):
         cfg = {"accountId": "123", "consumerSecret": "s3", "tokenSecret": "t3", "consumerKey": "k",
                "ai": {"apiKey": "sk-x", "model": "m"}, "_session": object(), "clientId": "public"}

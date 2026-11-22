@@ -96,7 +96,7 @@ flush();
 
 const body = [
   ...c.cover('Technical Reference', 'How TQ Connector is built: NetSuite scripts, connector, add-in, installer and security',
-    ['Version 1.5  ·  November 2026', 'Internal: Techno Q', 'Connector 1.5.0  ·  Add-in 1.5.0.0  ·  NetSuite script 8  ·  Bundle 715956']),
+    ['Version 1.5  ·  November 2026', 'Internal: Techno Q', 'Connector 1.5.1  ·  Add-in 1.5.1.0  ·  NetSuite script 8  ·  Bundle 715956']),
   ...c.toc(),
   ...out,
 ];

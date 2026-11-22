@@ -46,7 +46,7 @@ import ledger as ledger_module  # noqa: E402
 import licence as licence_module  # noqa: E402
 import tqcrypto  # noqa: E402
 
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 FROZEN = bool(getattr(sys, "frozen", False))   # running as the installed TQConnector.exe
 if FROZEN:
     ROOT = os.path.dirname(os.path.abspath(sys.executable))
@@ -1131,6 +1131,7 @@ def main():
     parser.add_argument("--http", action="store_true", help="plain HTTP (browser preview only; Excel needs HTTPS)")
     parser.add_argument("--make-cert", action="store_true", help="make this PC's localhost certificate and stop")
     parser.add_argument("--watch", action="store_true", help="keep the connector running: start it again if it stops")
+    parser.add_argument("--stop", action="store_true", help="ask the running connector to stop (used by the setup)")
     args = parser.parse_args()
 
     if sys.stdout is None or FROZEN:  # the installed exe has no console: keep a log instead
@@ -1138,11 +1139,13 @@ def main():
         log = open(os.path.join(DATA_DIR, "server.log"), "a", encoding="utf-8", buffering=1)
         sys.stdout = sys.stderr = log
 
+    if args.stop:    # the setup: a polite stop instead of force-killing the process
+        sys.exit(care.request_stop(DATA_DIR, args.port))
     if args.make_cert:
         print("Certificate made, thumbprint %s" % make_certificate())
         return
     if args.watch:   # the start-up shortcut runs this: the connector itself is a child that is restarted if it stops
-        care.watch(sys.argv[1:], FROZEN, os.path.abspath(__file__), args.port)
+        care.watch(sys.argv[1:], FROZEN, os.path.abspath(__file__), args.port, DATA_DIR)
         return
 
     try:
@@ -1170,10 +1173,18 @@ def main():
     source = "NetSuite account %s" % cfg["accountId"] if cfg else "sample data"
     print("TQ Excel Connector running at %s://localhost:%d  (%s)" % (scheme, args.port, source))
     sys.stdout.flush()
+    care.clear_stop(DATA_DIR)
+    stopping = threading.Event()
+    care.watch_stop(DATA_DIR, lambda: (stopping.set(), threading.Thread(target=httpd.shutdown, daemon=True).start()))
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         pass
+    if stopping.is_set():
+        # Stopped for the setup: end the process now. Background work (sign-in refresh, look-ups) would otherwise
+        # keep it alive for a while, holding TQConnector.exe and its DLLs, so the setup could not replace them.
+        sys.stdout.flush()
+        os._exit(0)
 
 
 if __name__ == "__main__":
